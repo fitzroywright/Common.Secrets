@@ -95,7 +95,7 @@ public sealed class OpenBaoSecretProvider : SecretProviderBase, IDisposable
             throw new InvalidOperationException("OpenBao requires HTTPS. Set CommonSecrets:OpenBao:RequireHttps=false only for an explicitly trusted development network.");
         }
 
-        string normalized = address.AbsoluteUri.EndsWith('/', StringComparison.Ordinal)
+        string normalized = address.AbsoluteUri.EndsWith("/", StringComparison.Ordinal)
             ? address.AbsoluteUri
             : address.AbsoluteUri + "/";
         return new Uri(normalized, UriKind.Absolute);
