@@ -15,7 +15,7 @@ public sealed class OpenBaoSecretProvider : SecretProviderBase, IDisposable
     {
     }
 
-    internal OpenBaoSecretProvider(OpenBaoOptions options, HttpClient httpClient)
+    public OpenBaoSecretProvider(OpenBaoOptions options, HttpClient httpClient)
         : this(options, httpClient, false)
     {
     }
