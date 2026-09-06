@@ -12,13 +12,20 @@ public static class ServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
+        OpenBaoOptions openBaoOptions = configuration
+            .GetSection("CommonSecrets:OpenBao")
+            .Get<OpenBaoOptions>() ?? new OpenBaoOptions();
+
+        services.AddSingleton(openBaoOptions);
         services.AddSingleton<EnvironmentSecretProvider>();
+        services.AddSingleton<OpenBaoSecretProvider>();
         services.AddSingleton(new ConfigurationSecretProvider(configuration));
         services.AddSingleton<ISecretProvider>(provider =>
         {
             ISecretProvider[] providers =
             {
                 provider.GetRequiredService<EnvironmentSecretProvider>(),
+                provider.GetRequiredService<OpenBaoSecretProvider>(),
                 provider.GetRequiredService<ConfigurationSecretProvider>()
             };
 
