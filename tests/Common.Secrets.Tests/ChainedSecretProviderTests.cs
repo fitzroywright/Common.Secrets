@@ -1,3 +1,5 @@
+using Xunit;
+
 namespace Common.Secrets.Tests;
 
 public sealed class ChainedSecretProviderTests
