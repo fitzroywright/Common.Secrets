@@ -7,6 +7,6 @@ public sealed class BitwardenSecretsManagerOptions
     public string AccessTokenEnvironmentVariable { get; init; } = "BWS_ACCESS_TOKEN";
     public string? ServerUrl { get; init; }
     public TimeSpan CommandTimeout { get; init; } = TimeSpan.FromSeconds(15);
-    public IReadOnlyDictionary<string, string> SecretIds { get; init; }
-        = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, string> SecretIds { get; init; }
+        = new(StringComparer.OrdinalIgnoreCase);
 }
