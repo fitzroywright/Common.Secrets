@@ -7,6 +7,7 @@ public sealed class CommonSecretsOptions
         "Environment",
         "OpenBao",
         "Bitwarden",
+        "BitwardenPasswordManager",
         "Configuration"
     ];
 }
