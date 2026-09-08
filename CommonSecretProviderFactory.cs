@@ -24,13 +24,20 @@ public static class CommonSecretProviderFactory
             .GetSection("CommonSecrets:BitwardenPasswordManager")
             .Get<BitwardenPasswordManagerOptions>() ?? new BitwardenPasswordManagerOptions();
 
+        ISecretProvider environmentProvider = new EnvironmentSecretProvider();
+        ISecretProvider passwordManagerProvider = new BitwardenPasswordManagerSecretProvider(passwordManagerOptions);
+        ISecretProvider secretsManagerProvider = new BitwardenSecretProvider(bitwardenOptions);
+        ISecretProvider openBaoProvider = new OpenBaoSecretProvider(openBaoOptions);
+        ISecretProvider configurationProvider = new ConfigurationSecretProvider(configuration);
+
         Dictionary<string, ISecretProvider> providersByName = new(StringComparer.OrdinalIgnoreCase)
         {
-            ["Environment"] = new EnvironmentSecretProvider(),
-            ["OpenBao"] = new OpenBaoSecretProvider(openBaoOptions),
-            ["Bitwarden"] = new BitwardenSecretProvider(bitwardenOptions),
-            ["BitwardenPasswordManager"] = new BitwardenPasswordManagerSecretProvider(passwordManagerOptions),
-            ["Configuration"] = new ConfigurationSecretProvider(configuration)
+            ["Environment"] = environmentProvider,
+            ["BitwardenPasswordManager"] = passwordManagerProvider,
+            ["BitwardenSecretsManager"] = secretsManagerProvider,
+            ["Bitwarden"] = secretsManagerProvider,
+            ["OpenBao"] = openBaoProvider,
+            ["Configuration"] = configurationProvider
         };
 
         string[] providerOrder = commonOptions.ProviderOrder is { Length: > 0 }
@@ -38,12 +45,22 @@ public static class CommonSecretProviderFactory
             : new CommonSecretsOptions().ProviderOrder;
 
         List<ISecretProvider> orderedProviders = [];
-        foreach (string providerName in providerOrder)
+        HashSet<ISecretProvider> includedProviders = new(ReferenceEqualityComparer.Instance);
+
+        foreach (string configuredName in providerOrder)
         {
-            if (!providersByName.TryGetValue(providerName, out ISecretProvider? secretProvider))
+            string providerName = configuredName?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(providerName) ||
+                !providersByName.TryGetValue(providerName, out ISecretProvider? secretProvider))
             {
                 throw new InvalidOperationException(
-                    $"Unknown Common.Secrets provider '{providerName}'. Valid providers are Environment, OpenBao, Bitwarden, BitwardenPasswordManager and Configuration.");
+                    $"Unknown Common.Secrets provider '{configuredName}'. Valid providers are Environment, BitwardenPasswordManager, BitwardenSecretsManager, OpenBao and Configuration. 'Bitwarden' remains supported as a legacy alias for BitwardenSecretsManager.");
+            }
+
+            if (!includedProviders.Add(secretProvider))
+            {
+                throw new InvalidOperationException(
+                    $"Common.Secrets provider '{providerName}' appears more than once in CommonSecrets:ProviderOrder.");
             }
 
             orderedProviders.Add(secretProvider);
