@@ -5,9 +5,9 @@ public sealed class CommonSecretsOptions
     public string[] ProviderOrder { get; init; } =
     [
         "Environment",
-        "OpenBao",
-        "Bitwarden",
         "BitwardenPasswordManager",
+        "BitwardenSecretsManager",
+        "OpenBao",
         "Configuration"
     ];
 }
