@@ -12,6 +12,10 @@ public static class ServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
+        CommonSecretsOptions commonOptions = configuration
+            .GetSection("CommonSecrets")
+            .Get<CommonSecretsOptions>() ?? new CommonSecretsOptions();
+
         OpenBaoOptions openBaoOptions = configuration
             .GetSection("CommonSecrets:OpenBao")
             .Get<OpenBaoOptions>() ?? new OpenBaoOptions();
@@ -20,6 +24,7 @@ public static class ServiceCollectionExtensions
             .GetSection("CommonSecrets:Bitwarden")
             .Get<BitwardenSecretsManagerOptions>() ?? new BitwardenSecretsManagerOptions();
 
+        services.AddSingleton(commonOptions);
         services.AddSingleton(openBaoOptions);
         services.AddSingleton(bitwardenOptions);
         services.AddSingleton<EnvironmentSecretProvider>();
@@ -28,15 +33,31 @@ public static class ServiceCollectionExtensions
         services.AddSingleton(new ConfigurationSecretProvider(configuration));
         services.AddSingleton<ISecretProvider>(provider =>
         {
-            ISecretProvider[] providers =
+            Dictionary<string, ISecretProvider> providersByName = new(StringComparer.OrdinalIgnoreCase)
             {
-                provider.GetRequiredService<EnvironmentSecretProvider>(),
-                provider.GetRequiredService<OpenBaoSecretProvider>(),
-                provider.GetRequiredService<BitwardenSecretProvider>(),
-                provider.GetRequiredService<ConfigurationSecretProvider>()
+                ["Environment"] = provider.GetRequiredService<EnvironmentSecretProvider>(),
+                ["OpenBao"] = provider.GetRequiredService<OpenBaoSecretProvider>(),
+                ["Bitwarden"] = provider.GetRequiredService<BitwardenSecretProvider>(),
+                ["Configuration"] = provider.GetRequiredService<ConfigurationSecretProvider>()
             };
 
-            return new ChainedSecretProvider(providers);
+            string[] providerOrder = commonOptions.ProviderOrder is { Length: > 0 }
+                ? commonOptions.ProviderOrder
+                : new CommonSecretsOptions().ProviderOrder;
+
+            List<ISecretProvider> orderedProviders = [];
+            foreach (string providerName in providerOrder)
+            {
+                if (!providersByName.TryGetValue(providerName, out ISecretProvider? secretProvider))
+                {
+                    throw new InvalidOperationException(
+                        $"Unknown Common.Secrets provider '{providerName}'. Valid providers are Environment, OpenBao, Bitwarden and Configuration.");
+                }
+
+                orderedProviders.Add(secretProvider);
+            }
+
+            return new ChainedSecretProvider(orderedProviders);
         });
 
         return services;
