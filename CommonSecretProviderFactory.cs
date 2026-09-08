@@ -20,11 +20,16 @@ public static class CommonSecretProviderFactory
             .GetSection("CommonSecrets:Bitwarden")
             .Get<BitwardenSecretsManagerOptions>() ?? new BitwardenSecretsManagerOptions();
 
+        BitwardenPasswordManagerOptions passwordManagerOptions = configuration
+            .GetSection("CommonSecrets:BitwardenPasswordManager")
+            .Get<BitwardenPasswordManagerOptions>() ?? new BitwardenPasswordManagerOptions();
+
         Dictionary<string, ISecretProvider> providersByName = new(StringComparer.OrdinalIgnoreCase)
         {
             ["Environment"] = new EnvironmentSecretProvider(),
             ["OpenBao"] = new OpenBaoSecretProvider(openBaoOptions),
             ["Bitwarden"] = new BitwardenSecretProvider(bitwardenOptions),
+            ["BitwardenPasswordManager"] = new BitwardenPasswordManagerSecretProvider(passwordManagerOptions),
             ["Configuration"] = new ConfigurationSecretProvider(configuration)
         };
 
@@ -38,7 +43,7 @@ public static class CommonSecretProviderFactory
             if (!providersByName.TryGetValue(providerName, out ISecretProvider? secretProvider))
             {
                 throw new InvalidOperationException(
-                    $"Unknown Common.Secrets provider '{providerName}'. Valid providers are Environment, OpenBao, Bitwarden and Configuration.");
+                    $"Unknown Common.Secrets provider '{providerName}'. Valid providers are Environment, OpenBao, Bitwarden, BitwardenPasswordManager and Configuration.");
             }
 
             orderedProviders.Add(secretProvider);
