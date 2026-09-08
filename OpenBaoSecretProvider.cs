@@ -1,14 +1,17 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
 
 namespace Common.Secrets;
 
-public sealed class OpenBaoSecretProvider : SecretProviderBase, IDisposable
+public sealed class OpenBaoSecretProvider : SecretProviderBase, ISecretProviderHealth, IDisposable
 {
     private readonly OpenBaoOptions options;
     private readonly HttpClient httpClient;
     private readonly bool ownsHttpClient;
+    private readonly ConcurrentDictionary<string, string> memoryCache = new(StringComparer.OrdinalIgnoreCase);
+    private Exception? lastError;
 
     public OpenBaoSecretProvider(OpenBaoOptions options)
         : this(options, new HttpClient(), true)
@@ -27,6 +30,12 @@ public sealed class OpenBaoSecretProvider : SecretProviderBase, IDisposable
         this.ownsHttpClient = ownsHttpClient;
     }
 
+    public string ProviderName => "OpenBao";
+
+    public bool IsEnabled => options.Enabled;
+
+    public Exception? LastError => lastError;
+
     public override async Task<string?> GetAsync(
         string name,
         CancellationToken cancellationToken = default)
@@ -38,41 +47,106 @@ public sealed class OpenBaoSecretProvider : SecretProviderBase, IDisposable
             return null;
         }
 
-        Uri address = GetValidatedAddress();
-        string token = GetToken();
-        string requestPath = BuildRequestPath(name);
-        using HttpRequestMessage request = new(HttpMethod.Get, new Uri(address, requestPath));
-        request.Headers.Add("X-Vault-Token", token);
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-
-        using HttpResponseMessage response = await httpClient
-            .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (response.StatusCode == HttpStatusCode.NotFound)
+        if (memoryCache.TryGetValue(name, out string? cached))
         {
-            return null;
+            return cached;
         }
 
-        response.EnsureSuccessStatusCode();
-
-        await using Stream content = await response.Content
-            .ReadAsStreamAsync(cancellationToken)
-            .ConfigureAwait(false);
-        using JsonDocument document = await JsonDocument
-            .ParseAsync(content, cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
-
-        if (!document.RootElement.TryGetProperty("data", out JsonElement outerData) ||
-            !outerData.TryGetProperty("data", out JsonElement secretData) ||
-            !secretData.TryGetProperty("value", out JsonElement valueElement))
+        try
         {
-            return null;
+            Uri address = GetValidatedAddress();
+            string token = GetToken();
+            string requestPath = BuildRequestPath(name);
+            using HttpRequestMessage request = new(HttpMethod.Get, new Uri(address, requestPath));
+            request.Headers.Add("X-Vault-Token", token);
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+            using HttpResponseMessage response = await httpClient
+                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (response.StatusCode == HttpStatusCode.NotFound)
+            {
+                lastError = null;
+                return null;
+            }
+
+            response.EnsureSuccessStatusCode();
+
+            await using Stream content = await response.Content
+                .ReadAsStreamAsync(cancellationToken)
+                .ConfigureAwait(false);
+            using JsonDocument document = await JsonDocument
+                .ParseAsync(content, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+
+            if (!document.RootElement.TryGetProperty("data", out JsonElement outerData) ||
+                !outerData.TryGetProperty("data", out JsonElement secretData) ||
+                !secretData.TryGetProperty("value", out JsonElement valueElement))
+            {
+                lastError = null;
+                return null;
+            }
+
+            string? value = valueElement.ValueKind == JsonValueKind.String
+                ? valueElement.GetString()
+                : valueElement.GetRawText();
+
+            if (!string.IsNullOrEmpty(value))
+            {
+                memoryCache.TryAdd(name, value);
+            }
+
+            lastError = null;
+            return value;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            lastError = exception;
+            throw;
+        }
+    }
+
+    public async Task<SecretProviderHealth> CheckHealthAsync(CancellationToken cancellationToken = default)
+    {
+        if (!options.Enabled)
+        {
+            return new SecretProviderHealth(ProviderName, false, false, "Provider is disabled.");
         }
 
-        return valueElement.ValueKind == JsonValueKind.String
-            ? valueElement.GetString()
-            : valueElement.GetRawText();
+        try
+        {
+            Uri address = GetValidatedAddress();
+            string token = GetToken();
+            using HttpRequestMessage request = new(HttpMethod.Get, new Uri(address, "v1/sys/health"));
+            request.Headers.Add("X-Vault-Token", token);
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+            using HttpResponseMessage response = await httpClient
+                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+                .ConfigureAwait(false);
+
+            bool available = response.IsSuccessStatusCode ||
+                response.StatusCode == HttpStatusCode.TooManyRequests ||
+                response.StatusCode == HttpStatusCode.ServiceUnavailable;
+
+            if (!available)
+            {
+                response.EnsureSuccessStatusCode();
+            }
+
+            lastError = null;
+            return new SecretProviderHealth(
+                ProviderName,
+                true,
+                available,
+                available ? $"OpenBao responded with HTTP {(int)response.StatusCode}." : "OpenBao is unavailable.");
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            lastError = exception;
+            return new SecretProviderHealth(ProviderName, true, false, exception.Message, exception);
+        }
     }
 
     public void Dispose()
