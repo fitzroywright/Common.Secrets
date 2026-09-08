@@ -2,7 +2,7 @@
 
 Reusable secret retrieval for Aegis applications.
 
-`Common.Secrets` deliberately contains no Aegis Studio, messaging, Active Directory, Bitwarden, or OpenBao-specific secret names. Consumers own their secret names; this package owns retrieval and provider composition.
+`Common.Secrets` deliberately contains no application-specific secret names. Consumers own their secret names and provider precedence; this package owns retrieval and provider composition.
 
 ## Core API
 
@@ -11,13 +11,63 @@ ISecretProvider.GetAsync(name)
 ISecretProvider.GetRequiredAsync(name)
 ```
 
-The default provider chain is:
+## Configurable provider order
 
-1. environment variables
-2. OpenBao KV v2, when enabled
-3. .NET configuration
+Every consuming application can choose its own provider precedence through `CommonSecrets:ProviderOrder`.
 
-This allows local or container environment variables to override centrally managed secrets while keeping normal configuration as a development fallback.
+The default order is:
+
+1. Environment
+2. Bitwarden Password Manager
+3. Bitwarden Secrets Manager
+4. OpenBao
+5. .NET Configuration
+
+Example:
+
+```json
+{
+  "CommonSecrets": {
+    "ProviderOrder": [
+      "Environment",
+      "BitwardenPasswordManager",
+      "BitwardenSecretsManager",
+      "OpenBao",
+      "Configuration"
+    ]
+  }
+}
+```
+
+An application can use a different order or omit providers entirely. For example, a server application can prefer OpenBao:
+
+```json
+{
+  "CommonSecrets": {
+    "ProviderOrder": [
+      "Environment",
+      "OpenBao",
+      "Configuration"
+    ]
+  }
+}
+```
+
+A developer workstation can instead prefer Bitwarden Password Manager:
+
+```json
+{
+  "CommonSecrets": {
+    "ProviderOrder": [
+      "Environment",
+      "BitwardenPasswordManager",
+      "Configuration"
+    ]
+  }
+}
+```
+
+The first provider returning a non-empty secret wins. Provider names are case-insensitive. `Bitwarden` remains supported as a legacy alias for `BitwardenSecretsManager`, but the canonical provider name is `BitwardenSecretsManager`. A provider may appear only once in the configured order.
 
 ## OpenBao
 
@@ -60,6 +110,12 @@ OPENBAO_TOKEN=<token>
 `TokenEnvironmentVariable` can be changed if a host needs a different environment-variable name. A `Token` configuration value is also supported for bootstrap scenarios, but should not be committed to source control.
 
 For an internal OpenBao instance running on the Bitwarden VM or in a separate Docker container on that VM, expose the OpenBao API only to the required internal application hosts, use TLS in production, and issue an application-specific token/policy restricted to that application's secret path.
+
+## Bitwarden
+
+`BitwardenPasswordManager` and `BitwardenSecretsManager` are separate providers so applications can choose the appropriate trust model and order independently.
+
+Password Manager is most suitable for interactive/developer scenarios. Secrets Manager and OpenBao are better suited to unattended services.
 
 ## Development
 
