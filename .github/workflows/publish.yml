@@ -25,7 +25,7 @@ jobs:
       - run: dotnet restore Common.Secrets.slnx
       - run: dotnet build Common.Secrets.slnx --configuration Release --no-restore
       - run: dotnet test Common.Secrets.slnx --configuration Release --no-build
-      - run: dotnet pack src/Common.Secrets/Common.Secrets.csproj --configuration Release --no-build --output ./artifacts
+      - run: dotnet pack Common.Secrets.csproj --configuration Release --no-build --output ./artifacts
       - run: dotnet nuget push './artifacts/*.nupkg' --skip-duplicate
         env:
           NUGET_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
