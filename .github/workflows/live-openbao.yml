@@ -1,0 +1,107 @@
+name: Live OpenBao integration
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  live-openbao:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout Common.Diagnostics
+        uses: actions/checkout@v4
+        with:
+          repository: fitzroywright/Common.Diagnostics
+          path: Common.Diagnostics
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Start disposable OpenBao
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --name openbao \
+            -p 8200:8200 \
+            -e BAO_DEV_ROOT_TOKEN_ID=root \
+            openbao/openbao:latest \
+            server -dev -dev-root-token-id=root -dev-listen-address=0.0.0.0:8200
+
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8200/v1/sys/health >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs openbao
+          exit 1
+
+      - name: Configure AppRole and KV test data
+        shell: bash
+        run: |
+          set -euo pipefail
+          export VAULT=http://127.0.0.1:8200
+          HEADER='X-Vault-Token: root'
+
+          curl -fsS -H "$HEADER" -H 'Content-Type: application/json' \
+            -X POST "$VAULT/v1/sys/auth/approle" \
+            -d '{"type":"approle"}' >/dev/null
+
+          curl -fsS -H "$HEADER" -H 'Content-Type: application/json' \
+            -X POST "$VAULT/v1/sys/mounts/aegis-test" \
+            -d '{"type":"kv","options":{"version":"2"}}' >/dev/null
+
+          cat > /tmp/policy.hcl <<'EOF'
+          path "aegis-test/data/integration/*" {
+            capabilities = ["read"]
+          }
+          path "sys/health" {
+            capabilities = ["read"]
+          }
+          path "auth/token/renew-self" {
+            capabilities = ["update"]
+          }
+          path "auth/token/revoke-self" {
+            capabilities = ["update"]
+          }
+          EOF
+          jq -Rs '{policy:.}' < /tmp/policy.hcl > /tmp/policy.json
+          curl -fsS -H "$HEADER" -H 'Content-Type: application/json' \
+            -X PUT "$VAULT/v1/sys/policies/acl/common-secrets-integration" \
+            --data-binary @/tmp/policy.json >/dev/null
+
+          curl -fsS -H "$HEADER" -H 'Content-Type: application/json' \
+            -X POST "$VAULT/v1/auth/approle/role/common-secrets-integration" \
+            -d '{"token_policies":["common-secrets-integration"],"token_ttl":"2m","token_max_ttl":"10m","secret_id_ttl":"10m"}' >/dev/null
+
+          ROLE_ID=$(curl -fsS -H "$HEADER" "$VAULT/v1/auth/approle/role/common-secrets-integration/role-id" | jq -r '.data.role_id')
+          SECRET_ID=$(curl -fsS -H "$HEADER" -H 'Content-Type: application/json' -X POST "$VAULT/v1/auth/approle/role/common-secrets-integration/secret-id" -d '{}' | jq -r '.data.secret_id')
+
+          curl -fsS -H "$HEADER" -H 'Content-Type: application/json' \
+            -X POST "$VAULT/v1/aegis-test/data/integration/Smoke/Value" \
+            -d '{"data":{"value":"integration-ok"}}' >/dev/null
+
+          echo "OPENBAO_ROLE_ID=$ROLE_ID" >> "$GITHUB_ENV"
+          echo "OPENBAO_SECRET_ID=$SECRET_ID" >> "$GITHUB_ENV"
+
+      - name: Restore
+        run: dotnet restore Common.Secrets.slnx
+
+      - name: Build
+        run: dotnet build Common.Secrets.slnx --configuration Release --no-restore
+
+      - name: Run live OpenBao test
+        env:
+          COMMON_SECRETS_LIVE_OPENBAO: '1'
+          OPENBAO_ADDR: http://127.0.0.1:8200
+        run: dotnet test Common.Secrets.Tests/Common.Secrets.Tests.csproj --configuration Release --no-build --filter FullyQualifiedName~OpenBaoLiveIntegrationTests
+
+      - name: OpenBao logs on failure
+        if: failure()
+        run: docker logs openbao
