@@ -57,8 +57,21 @@ jobs:
             -X POST "$VAULT/v1/sys/mounts/aegis-test" \
             -d '{"type":"kv","options":{"version":"2"}}' >/dev/null
 
-          POLICY='path "aegis-test/data/integration/*" { capabilities = ["read"] }\npath "sys/health" { capabilities = ["read"] }\npath "auth/token/renew-self" { capabilities = ["update"] }\npath "auth/token/revoke-self" { capabilities = ["update"] }'
-          jq -n --arg policy "$POLICY" '{policy:$policy}' > /tmp/policy.json
+          cat > /tmp/policy.hcl <<'EOF'
+          path "aegis-test/data/integration/*" {
+            capabilities = ["read"]
+          }
+          path "sys/health" {
+            capabilities = ["read"]
+          }
+          path "auth/token/renew-self" {
+            capabilities = ["update"]
+          }
+          path "auth/token/revoke-self" {
+            capabilities = ["update"]
+          }
+          EOF
+          jq -Rs '{policy:.}' < /tmp/policy.hcl > /tmp/policy.json
           curl -fsS -H "$HEADER" -H 'Content-Type: application/json' \
             -X PUT "$VAULT/v1/sys/policies/acl/common-secrets-integration" \
             --data-binary @/tmp/policy.json >/dev/null
@@ -68,7 +81,7 @@ jobs:
             -d '{"token_policies":["common-secrets-integration"],"token_ttl":"2m","token_max_ttl":"10m","secret_id_ttl":"10m"}' >/dev/null
 
           ROLE_ID=$(curl -fsS -H "$HEADER" "$VAULT/v1/auth/approle/role/common-secrets-integration/role-id" | jq -r '.data.role_id')
-          SECRET_ID=$(curl -fsS -H "$HEADER" -H 'Content-Type: application/json' -X POST "$VAULT/v1/auth/approle/role/common-secrets-integration/secret-id" | jq -r '.data.secret_id')
+          SECRET_ID=$(curl -fsS -H "$HEADER" -H 'Content-Type: application/json' -X POST "$VAULT/v1/auth/approle/role/common-secrets-integration/secret-id" -d '{}' | jq -r '.data.secret_id')
 
           curl -fsS -H "$HEADER" -H 'Content-Type: application/json' \
             -X POST "$VAULT/v1/aegis-test/data/integration/Smoke/Value" \
