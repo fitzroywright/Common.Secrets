@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Common.Secrets;
 
@@ -27,6 +28,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton(commonOptions);
         services.AddSingleton(openBaoOptions);
         services.AddSingleton(bitwardenOptions);
+        services.TryAddSingleton<ISecretTelemetrySink, NullSecretTelemetrySink>();
         services.AddSingleton<EnvironmentSecretProvider>();
         services.AddSingleton<OpenBaoSecretProvider>();
         services.AddSingleton<BitwardenSecretProvider>();
@@ -57,7 +59,11 @@ public static class ServiceCollectionExtensions
                 orderedProviders.Add(secretProvider);
             }
 
-            return new ChainedSecretProvider(orderedProviders);
+            ChainedSecretProvider chain = new(orderedProviders);
+            return new ObservedSecretProvider(
+                chain,
+                provider.GetRequiredService<ISecretTelemetrySink>(),
+                commonOptions);
         });
 
         return services;
