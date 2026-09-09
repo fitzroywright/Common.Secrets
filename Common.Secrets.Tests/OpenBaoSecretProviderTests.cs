@@ -7,7 +7,7 @@ namespace Common.Secrets.Tests;
 public sealed class OpenBaoSecretProviderTests
 {
     [Fact]
-    public async Task GetAsync_ReadsValueFromKvV2Path()
+    public async Task GetAsync_UsesAuthenticatorTokenAndReadsKvValue()
     {
         RecordingHandler handler = new(HttpStatusCode.OK, "{\"data\":{\"data\":{\"value\":\"super-secret\"}}}");
         using HttpClient client = new(handler);
@@ -16,18 +16,16 @@ public sealed class OpenBaoSecretProviderTests
             Enabled = true,
             Address = "https://openbao.internal:8200",
             MountPath = "secret",
-            BasePath = "aegis/studio",
-            Token = "test-token"
+            BasePath = "aegis/studio"
         };
-        OpenBaoSecretProvider provider = new(options, client);
+        StubAuthenticator authenticator = new("short-lived-token");
+        OpenBaoSecretProvider provider = new(options, client, authenticator);
 
         string? result = await provider.GetAsync("Database:Password");
 
         Assert.Equal("super-secret", result);
-        Assert.Equal(
-            "https://openbao.internal:8200/v1/secret/data/aegis/studio/Database/Password",
-            handler.LastRequestUri?.ToString());
-        Assert.Equal("test-token", handler.LastToken);
+        Assert.Equal("short-lived-token", handler.LastToken);
+        Assert.Equal(1, authenticator.CallCount);
     }
 
     [Fact]
@@ -35,13 +33,10 @@ public sealed class OpenBaoSecretProviderTests
     {
         RecordingHandler handler = new(HttpStatusCode.NotFound, "{}");
         using HttpClient client = new(handler);
-        OpenBaoOptions options = new()
-        {
-            Enabled = true,
-            Address = "https://openbao.internal:8200",
-            Token = "test-token"
-        };
-        OpenBaoSecretProvider provider = new(options, client);
+        OpenBaoSecretProvider provider = new(
+            new OpenBaoOptions { Enabled = true, Address = "https://openbao.internal:8200" },
+            client,
+            new StubAuthenticator("short-lived-token"));
 
         string? result = await provider.GetAsync("Missing:Secret");
 
@@ -53,12 +48,31 @@ public sealed class OpenBaoSecretProviderTests
     {
         RecordingHandler handler = new(HttpStatusCode.InternalServerError, "{}");
         using HttpClient client = new(handler);
-        OpenBaoSecretProvider provider = new(new OpenBaoOptions(), client);
+        StubAuthenticator authenticator = new("unused");
+        OpenBaoSecretProvider provider = new(new OpenBaoOptions(), client, authenticator);
 
         string? result = await provider.GetAsync("Database:Password");
 
         Assert.Null(result);
-        Assert.Null(handler.LastRequestUri);
+        Assert.Equal(0, authenticator.CallCount);
+    }
+
+    private sealed class StubAuthenticator : IOpenBaoAuthenticator
+    {
+        private readonly string token;
+
+        public StubAuthenticator(string token)
+        {
+            this.token = token;
+        }
+
+        public int CallCount { get; private set; }
+
+        public Task<string> GetTokenAsync(CancellationToken cancellationToken = default)
+        {
+            CallCount++;
+            return Task.FromResult(token);
+        }
     }
 
     private sealed class RecordingHandler : HttpMessageHandler
@@ -72,24 +86,19 @@ public sealed class OpenBaoSecretProviderTests
             this.responseBody = responseBody;
         }
 
-        public Uri? LastRequestUri { get; private set; }
-
         public string? LastToken { get; private set; }
 
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
-            LastRequestUri = request.RequestUri;
             LastToken = request.Headers.TryGetValues("X-Vault-Token", out IEnumerable<string>? values)
                 ? values.SingleOrDefault()
                 : null;
-
-            HttpResponseMessage response = new(statusCode)
+            return Task.FromResult(new HttpResponseMessage(statusCode)
             {
                 Content = new StringContent(responseBody, Encoding.UTF8, "application/json")
-            };
-            return Task.FromResult(response);
+            });
         }
     }
 }

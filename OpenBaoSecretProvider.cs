@@ -9,24 +9,39 @@ public sealed class OpenBaoSecretProvider : SecretProviderBase, ISecretProviderH
 {
     private readonly OpenBaoOptions options;
     private readonly HttpClient httpClient;
+    private readonly IOpenBaoAuthenticator authenticator;
     private readonly bool ownsHttpClient;
     private readonly ConcurrentDictionary<string, string> memoryCache = new(StringComparer.OrdinalIgnoreCase);
     private Exception? lastError;
 
-    public OpenBaoSecretProvider(OpenBaoOptions options)
-        : this(options, new HttpClient(), true)
+    public OpenBaoSecretProvider(
+        OpenBaoOptions options,
+        CommonSecretsOptions commonOptions)
+        : this(options, new HttpClient(), null, commonOptions, true)
     {
     }
 
-    public OpenBaoSecretProvider(OpenBaoOptions options, HttpClient httpClient)
-        : this(options, httpClient, false)
+    public OpenBaoSecretProvider(
+        OpenBaoOptions options,
+        HttpClient httpClient,
+        IOpenBaoAuthenticator authenticator)
+        : this(options, httpClient, authenticator, null, false)
     {
     }
 
-    private OpenBaoSecretProvider(OpenBaoOptions options, HttpClient httpClient, bool ownsHttpClient)
+    private OpenBaoSecretProvider(
+        OpenBaoOptions options,
+        HttpClient httpClient,
+        IOpenBaoAuthenticator? authenticator,
+        CommonSecretsOptions? commonOptions,
+        bool ownsHttpClient)
     {
         this.options = options ?? throw new ArgumentNullException(nameof(options));
         this.httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+        this.authenticator = authenticator ?? new OpenBaoAuthenticator(
+            options,
+            commonOptions ?? new CommonSecretsOptions(),
+            httpClient);
         this.ownsHttpClient = ownsHttpClient;
     }
 
@@ -55,7 +70,7 @@ public sealed class OpenBaoSecretProvider : SecretProviderBase, ISecretProviderH
         try
         {
             Uri address = GetValidatedAddress();
-            string token = GetToken();
+            string token = await authenticator.GetTokenAsync(cancellationToken).ConfigureAwait(false);
             string requestPath = BuildRequestPath(name);
             using HttpRequestMessage request = new(HttpMethod.Get, new Uri(address, requestPath));
             request.Headers.Add("X-Vault-Token", token);
@@ -117,7 +132,7 @@ public sealed class OpenBaoSecretProvider : SecretProviderBase, ISecretProviderH
         try
         {
             Uri address = GetValidatedAddress();
-            string token = GetToken();
+            string token = await authenticator.GetTokenAsync(cancellationToken).ConfigureAwait(false);
             using HttpRequestMessage request = new(HttpMethod.Get, new Uri(address, "v1/sys/health"));
             request.Headers.Add("X-Vault-Token", token);
             request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
@@ -130,11 +145,6 @@ public sealed class OpenBaoSecretProvider : SecretProviderBase, ISecretProviderH
                 response.StatusCode == HttpStatusCode.TooManyRequests ||
                 response.StatusCode == HttpStatusCode.ServiceUnavailable;
 
-            if (!available)
-            {
-                response.EnsureSuccessStatusCode();
-            }
-
             lastError = null;
             return new SecretProviderHealth(
                 ProviderName,
@@ -145,7 +155,12 @@ public sealed class OpenBaoSecretProvider : SecretProviderBase, ISecretProviderH
         catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
             lastError = exception;
-            return new SecretProviderHealth(ProviderName, true, false, exception.Message, exception);
+            return new SecretProviderHealth(
+                ProviderName,
+                true,
+                false,
+                "OpenBao health check failed.",
+                exception);
         }
     }
 
@@ -166,7 +181,7 @@ public sealed class OpenBaoSecretProvider : SecretProviderBase, ISecretProviderH
 
         if (options.RequireHttps && !string.Equals(address.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException("OpenBao requires HTTPS. Set CommonSecrets:OpenBao:RequireHttps=false only for an explicitly trusted development network.");
+            throw new InvalidOperationException("OpenBao requires HTTPS. Set RequireHttps=false only for local development.");
         }
 
         string normalized = address.AbsoluteUri.EndsWith("/", StringComparison.Ordinal)
@@ -175,33 +190,12 @@ public sealed class OpenBaoSecretProvider : SecretProviderBase, ISecretProviderH
         return new Uri(normalized, UriKind.Absolute);
     }
 
-    private string GetToken()
-    {
-        string environmentVariable = string.IsNullOrWhiteSpace(options.TokenEnvironmentVariable)
-            ? "OPENBAO_TOKEN"
-            : options.TokenEnvironmentVariable.Trim();
-        string? token = Environment.GetEnvironmentVariable(environmentVariable);
-        token = string.IsNullOrWhiteSpace(token) ? options.Token : token;
-
-        if (string.IsNullOrWhiteSpace(token))
-        {
-            throw new InvalidOperationException(
-                $"OpenBao is enabled but no token was provided. Set environment variable '{environmentVariable}' or CommonSecrets:OpenBao:Token.");
-        }
-
-        return token.Trim();
-    }
-
     private string BuildRequestPath(string name)
     {
         string mountPath = NormalizePathSegment(options.MountPath, "secret");
         string basePath = NormalizePath(options.BasePath);
         string secretPath = NormalizePath(name.Replace(':', '/'));
-
-        string combined = string.IsNullOrWhiteSpace(basePath)
-            ? secretPath
-            : $"{basePath}/{secretPath}";
-
+        string combined = string.IsNullOrWhiteSpace(basePath) ? secretPath : $"{basePath}/{secretPath}";
         return $"v1/{mountPath}/data/{combined}";
     }
 
@@ -220,8 +214,7 @@ public sealed class OpenBaoSecretProvider : SecretProviderBase, ISecretProviderH
 
         return string.Join(
             '/',
-            value
-                .Split(new[] { '/', '\\' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            value.Split(new[] { '/', '\\' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                 .Select(Uri.EscapeDataString));
     }
 }
