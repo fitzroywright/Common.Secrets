@@ -99,9 +99,11 @@ public sealed class OpenBaoAuthenticator : IOpenBaoAuthenticator, IOpenBaoTokenL
     private async Task<string> LoginAsync(CancellationToken cancellationToken)
     {
         string roleId = options.RoleId?.Trim() ?? string.Empty;
-        string secretId = Environment.GetEnvironmentVariable(options.SecretIdEnvironmentVariable)?.Trim() ?? string.Empty;
+        string secretId = await ReadBootstrapSecretIdAsync(cancellationToken).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(roleId) || string.IsNullOrWhiteSpace(secretId))
-            throw new InvalidOperationException("OpenBao workload authentication requires RoleId and a protected SecretId environment value.");
+        {
+            throw new InvalidOperationException("OpenBao workload authentication requires RoleId and a protected SecretId bootstrap value.");
+        }
 
         string authMount = NormalizePath(options.AuthMountPath, "approle");
         Uri loginUri = new(GetValidatedAddress(), $"v1/auth/{authMount}/login");
@@ -114,6 +116,37 @@ public sealed class OpenBaoAuthenticator : IOpenBaoAuthenticator, IOpenBaoTokenL
         using JsonDocument document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
         ApplyLease(document.RootElement.GetProperty("auth"));
         return cachedToken!;
+    }
+
+    private async Task<string> ReadBootstrapSecretIdAsync(CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(options.SecretIdFile))
+        {
+            string path = Path.GetFullPath(options.SecretIdFile);
+            if (!File.Exists(path))
+            {
+                throw new InvalidOperationException("Configured OpenBao SecretId bootstrap file does not exist.");
+            }
+
+            string secretId = (await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false)).Trim();
+            if (options.DeleteSecretIdFileAfterRead)
+            {
+                File.Delete(path);
+            }
+            return secretId;
+        }
+
+        if (commonOptions.Mode == SecretsEnvironmentMode.Production && options.RequireSecretIdFileInProduction)
+        {
+            throw new InvalidOperationException("Production OpenBao bootstrap requires a protected one-time SecretId file.");
+        }
+
+        string secretIdFromEnvironment = Environment.GetEnvironmentVariable(options.SecretIdEnvironmentVariable)?.Trim() ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(secretIdFromEnvironment) && options.ClearSecretIdEnvironmentVariableAfterRead)
+        {
+            Environment.SetEnvironmentVariable(options.SecretIdEnvironmentVariable, null);
+        }
+        return secretIdFromEnvironment;
     }
 
     private async Task<bool> TryRenewAsync(string token, CancellationToken cancellationToken)
