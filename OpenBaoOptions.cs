@@ -21,4 +21,12 @@ public sealed class OpenBaoOptions
     public string DevelopmentTokenEnvironmentVariable { get; init; } = "OPENBAO_TOKEN";
 
     public bool RequireHttps { get; init; } = true;
+
+    public bool RenewTokens { get; init; } = true;
+
+    public bool RevokeTokenOnDispose { get; init; } = true;
+
+    public TimeSpan TokenRenewalSafetyWindow { get; init; } = TimeSpan.FromSeconds(30);
+
+    public TimeSpan SecretCacheTtl { get; init; } = TimeSpan.FromMinutes(5);
 }
