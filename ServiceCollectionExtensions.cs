@@ -35,12 +35,13 @@ public static class ServiceCollectionExtensions
         services.AddSingleton(new ConfigurationSecretProvider(configuration));
         services.AddSingleton<ISecretProvider>(provider =>
         {
+            ISecretTelemetrySink telemetry = provider.GetRequiredService<ISecretTelemetrySink>();
             Dictionary<string, ISecretProvider> providersByName = new(StringComparer.OrdinalIgnoreCase)
             {
-                ["Environment"] = provider.GetRequiredService<EnvironmentSecretProvider>(),
-                ["OpenBao"] = provider.GetRequiredService<OpenBaoSecretProvider>(),
-                ["Bitwarden"] = provider.GetRequiredService<BitwardenSecretProvider>(),
-                ["Configuration"] = provider.GetRequiredService<ConfigurationSecretProvider>()
+                ["Environment"] = Observe(provider.GetRequiredService<EnvironmentSecretProvider>(), telemetry, commonOptions),
+                ["OpenBao"] = Observe(provider.GetRequiredService<OpenBaoSecretProvider>(), telemetry, commonOptions),
+                ["Bitwarden"] = Observe(provider.GetRequiredService<BitwardenSecretProvider>(), telemetry, commonOptions),
+                ["Configuration"] = Observe(provider.GetRequiredService<ConfigurationSecretProvider>(), telemetry, commonOptions)
             };
 
             string[] providerOrder = commonOptions.ProviderOrder is { Length: > 0 }
@@ -59,13 +60,17 @@ public static class ServiceCollectionExtensions
                 orderedProviders.Add(secretProvider);
             }
 
-            ChainedSecretProvider chain = new(orderedProviders);
-            return new ObservedSecretProvider(
-                chain,
-                provider.GetRequiredService<ISecretTelemetrySink>(),
-                commonOptions);
+            return new ChainedSecretProvider(orderedProviders);
         });
 
         return services;
+    }
+
+    private static ISecretProvider Observe(
+        ISecretProvider provider,
+        ISecretTelemetrySink telemetry,
+        CommonSecretsOptions options)
+    {
+        return new ObservedSecretProvider(provider, telemetry, options);
     }
 }
