@@ -8,4 +8,10 @@ public sealed class CommonSecretsOptions
         "OpenBao",
         "Configuration"
     ];
+
+    public string WorkloadName { get; init; } = string.Empty;
+
+    public string EnvironmentName { get; init; } = string.Empty;
+
+    public string MachineName { get; init; } = string.Empty;
 }
