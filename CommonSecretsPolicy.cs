@@ -6,7 +6,7 @@ public static class CommonSecretsPolicy
         new Dictionary<SecretsEnvironmentMode, string[]>
         {
             [SecretsEnvironmentMode.Production] = ["OpenBao"],
-            [SecretsEnvironmentMode.Development] = ["Environment", "OpenBao", "Bitwarden", "Configuration"],
+            [SecretsEnvironmentMode.Development] = ["Environment", "OpenBao", "BitwardenSecretsManager", "Configuration"],
             [SecretsEnvironmentMode.OfflineDevelopment] = ["OpenBao", "Environment", "Configuration"],
             [SecretsEnvironmentMode.Test] = ["Environment", "Configuration"]
         };
@@ -15,9 +15,25 @@ public static class CommonSecretsPolicy
         new Dictionary<SecretsEnvironmentMode, HashSet<string>>
         {
             [SecretsEnvironmentMode.Production] = new(StringComparer.OrdinalIgnoreCase) { "OpenBao" },
-            [SecretsEnvironmentMode.Development] = new(StringComparer.OrdinalIgnoreCase) { "Environment", "OpenBao", "Bitwarden", "Configuration" },
-            [SecretsEnvironmentMode.OfflineDevelopment] = new(StringComparer.OrdinalIgnoreCase) { "OpenBao", "Environment", "Configuration" },
-            [SecretsEnvironmentMode.Test] = new(StringComparer.OrdinalIgnoreCase) { "Environment", "Configuration" }
+            [SecretsEnvironmentMode.Development] = new(StringComparer.OrdinalIgnoreCase)
+            {
+                "Environment",
+                "OpenBao",
+                "BitwardenPasswordManager",
+                "BitwardenSecretsManager",
+                "Configuration"
+            },
+            [SecretsEnvironmentMode.OfflineDevelopment] = new(StringComparer.OrdinalIgnoreCase)
+            {
+                "OpenBao",
+                "Environment",
+                "Configuration"
+            },
+            [SecretsEnvironmentMode.Test] = new(StringComparer.OrdinalIgnoreCase)
+            {
+                "Environment",
+                "Configuration"
+            }
         };
 
     public static string[] ResolveProviderOrder(CommonSecretsOptions options)
@@ -78,17 +94,19 @@ public static class CommonSecretsPolicy
                 throw new InvalidOperationException("Common.Secrets provider names cannot be blank.");
             }
 
-            string normalized = providerName.Trim();
+            string configuredName = providerName.Trim();
+            string normalized = NormalizeProviderName(configuredName);
+
             if (!allowed.Contains(normalized))
             {
                 throw new InvalidOperationException(
-                    $"Provider '{normalized}' is not allowed in Common.Secrets mode '{mode}'.");
+                    $"Provider '{configuredName}' is not allowed in Common.Secrets mode '{mode}'.");
             }
 
             if (!seen.Add(normalized))
             {
                 throw new InvalidOperationException(
-                    $"Provider '{normalized}' appears more than once in Common.Secrets provider order.");
+                    $"Provider '{configuredName}' appears more than once in Common.Secrets provider order.");
             }
         }
 
@@ -96,5 +114,12 @@ public static class CommonSecretsPolicy
         {
             throw new InvalidOperationException("Common.Secrets production mode must use OpenBao and fails closed without it.");
         }
+    }
+
+    private static string NormalizeProviderName(string providerName)
+    {
+        return string.Equals(providerName, "Bitwarden", StringComparison.OrdinalIgnoreCase)
+            ? "BitwardenSecretsManager"
+            : providerName;
     }
 }
