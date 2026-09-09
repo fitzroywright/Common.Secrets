@@ -26,7 +26,7 @@ public sealed class OpenBaoAuthenticatorTests
                 DevelopmentToken = "must-not-be-used"
             };
             CommonSecretsOptions common = new() { Mode = SecretsEnvironmentMode.Production };
-            OpenBaoAuthenticator authenticator = new(options, common, client);
+            await using OpenBaoAuthenticator authenticator = new(options, common, client);
 
             string token = await authenticator.GetTokenAsync();
 
@@ -34,11 +34,71 @@ public sealed class OpenBaoAuthenticatorTests
             Assert.Contains("cafeteria-role", handler.RequestBody, StringComparison.Ordinal);
             Assert.Contains("protected-secret-id", handler.RequestBody, StringComparison.Ordinal);
             Assert.DoesNotContain("must-not-be-used", handler.RequestBody, StringComparison.Ordinal);
+            Assert.Null(Environment.GetEnvironmentVariable(secretIdVariable));
         }
         finally
         {
             Environment.SetEnvironmentVariable(secretIdVariable, previous);
         }
+    }
+
+    [Fact]
+    public async Task ProductionCanRequireOneTimeProtectedSecretIdFile()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"common-secrets-{Guid.NewGuid():N}.secretid");
+        await File.WriteAllTextAsync(path, "one-time-secret-id");
+
+        try
+        {
+            AuthHandler handler = new();
+            using HttpClient client = new(handler);
+            OpenBaoOptions options = new()
+            {
+                Enabled = true,
+                Address = "https://openbao.internal:8200",
+                RoleId = "studio-role",
+                SecretIdFile = path,
+                RequireSecretIdFileInProduction = true,
+                DeleteSecretIdFileAfterRead = true,
+                RevokeTokenOnDispose = false
+            };
+            await using OpenBaoAuthenticator authenticator = new(
+                options,
+                new CommonSecretsOptions { Mode = SecretsEnvironmentMode.Production },
+                client);
+
+            string token = await authenticator.GetTokenAsync();
+
+            Assert.Equal("issued-short-lived-token", token);
+            Assert.Contains("one-time-secret-id", handler.RequestBody, StringComparison.Ordinal);
+            Assert.False(File.Exists(path));
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task ProductionFailsClosedWhenProtectedFileIsRequiredButMissing()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"missing-{Guid.NewGuid():N}.secretid");
+        using HttpClient client = new(new AuthHandler());
+        OpenBaoOptions options = new()
+        {
+            Enabled = true,
+            Address = "https://openbao.internal:8200",
+            RoleId = "cafeteria-role",
+            SecretIdFile = path,
+            RequireSecretIdFileInProduction = true,
+            RevokeTokenOnDispose = false
+        };
+        await using OpenBaoAuthenticator authenticator = new(
+            options,
+            new CommonSecretsOptions { Mode = SecretsEnvironmentMode.Production },
+            client);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => authenticator.GetTokenAsync());
     }
 
     [Fact]
@@ -57,15 +117,15 @@ public sealed class OpenBaoAuthenticatorTests
                 Address = "https://openbao.internal:8200",
                 RoleId = "cafeteria-role",
                 SecretIdEnvironmentVariable = secretIdVariable,
-                DevelopmentToken = "configured-static-token"
+                DevelopmentToken = "configured-static-token",
+                RevokeTokenOnDispose = false
             };
-            OpenBaoAuthenticator authenticator = new(
+            await using OpenBaoAuthenticator authenticator = new(
                 options,
                 new CommonSecretsOptions { Mode = SecretsEnvironmentMode.Production },
                 client);
 
-            await Assert.ThrowsAsync<InvalidOperationException>(
-                () => authenticator.GetTokenAsync());
+            await Assert.ThrowsAsync<InvalidOperationException>(() => authenticator.GetTokenAsync());
         }
         finally
         {
@@ -87,7 +147,7 @@ public sealed class OpenBaoAuthenticatorTests
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(
-                    "{\"auth\":{\"client_token\":\"issued-short-lived-token\",\"lease_duration\":600}}",
+                    "{\"auth\":{\"client_token\":\"issued-short-lived-token\",\"lease_duration\":600,\"renewable\":true}}",
                     Encoding.UTF8,
                     "application/json")
             };
