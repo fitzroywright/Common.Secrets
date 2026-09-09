@@ -51,8 +51,8 @@ public sealed class OpenBaoLiveIntegrationTests
             Assert.Equal("integration-ok", value);
 
             SecretProviderHealth health = await provider.CheckHealthAsync();
-            Assert.True(health.Enabled);
-            Assert.True(health.Available);
+            Assert.True(health.IsEnabled);
+            Assert.True(health.IsAvailable);
 
             await authenticator.RevokeAsync();
         }
