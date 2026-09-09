@@ -6,27 +6,21 @@ namespace Common.Secrets.Tests;
 public sealed class CommonSecretProviderFactoryTests
 {
     [Fact]
-    public async Task DefaultProviderOrderMatchesEnterprisePrecedence()
+    public void DefaultModeIsProduction()
     {
         CommonSecretsOptions options = new();
 
-        Assert.Equal(
-            [
-                "Environment",
-                "BitwardenPasswordManager",
-                "BitwardenSecretsManager",
-                "OpenBao",
-                "Configuration"
-            ],
-            options.ProviderOrder);
+        Assert.Equal(SecretsEnvironmentMode.Production, options.Mode);
+        Assert.Equal(["OpenBao"], CommonSecretsPolicy.ResolveProviderOrder(options));
     }
 
     [Fact]
-    public async Task ApplicationCanUseConfigurationOnly()
+    public async Task DevelopmentCanUseConfigurationOnly()
     {
         IConfiguration configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
+                ["CommonSecrets:Mode"] = "Development",
                 ["CommonSecrets:ProviderOrder:0"] = "Configuration",
                 ["Demo:Secret"] = "configuration-value"
             })
@@ -40,7 +34,7 @@ public sealed class CommonSecretProviderFactoryTests
     }
 
     [Fact]
-    public async Task ApplicationConfiguredOrderControlsPrecedence()
+    public async Task DevelopmentConfiguredOrderControlsPrecedence()
     {
         const string environmentVariable = "COMMON_SECRETS_FACTORY_TEST_VALUE";
         string? original = Environment.GetEnvironmentVariable(environmentVariable);
@@ -52,6 +46,7 @@ public sealed class CommonSecretProviderFactoryTests
             IConfiguration configuration = new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string?>
                 {
+                    ["CommonSecrets:Mode"] = "Development",
                     ["CommonSecrets:ProviderOrder:0"] = "Configuration",
                     ["CommonSecrets:ProviderOrder:1"] = "Environment",
                     [environmentVariable] = "configuration-value"
@@ -59,7 +54,6 @@ public sealed class CommonSecretProviderFactoryTests
                 .Build();
 
             ISecretProvider provider = CommonSecretProviderFactory.Create(configuration);
-
             string? value = await provider.GetAsync(environmentVariable);
 
             Assert.Equal("configuration-value", value);
@@ -71,11 +65,12 @@ public sealed class CommonSecretProviderFactoryTests
     }
 
     [Fact]
-    public void LegacyBitwardenAliasCannotBeConfiguredWithSecretsManagerTwice()
+    public void DevelopmentRejectsDuplicateBitwardenAlias()
     {
         IConfiguration configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
+                ["CommonSecrets:Mode"] = "Development",
                 ["CommonSecrets:ProviderOrder:0"] = "Bitwarden",
                 ["CommonSecrets:ProviderOrder:1"] = "BitwardenSecretsManager"
             })
