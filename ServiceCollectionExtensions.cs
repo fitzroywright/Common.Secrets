@@ -25,6 +25,8 @@ public static class ServiceCollectionExtensions
             .GetSection("CommonSecrets:Bitwarden")
             .Get<BitwardenSecretsManagerOptions>() ?? new BitwardenSecretsManagerOptions();
 
+        CommonSecretsPolicy.Validate(commonOptions, openBaoOptions);
+
         services.AddSingleton(commonOptions);
         services.AddSingleton(openBaoOptions);
         services.AddSingleton(bitwardenOptions);
@@ -44,11 +46,9 @@ public static class ServiceCollectionExtensions
                 ["Configuration"] = Observe(provider.GetRequiredService<ConfigurationSecretProvider>(), telemetry, commonOptions)
             };
 
-            string[] providerOrder = commonOptions.ProviderOrder is { Length: > 0 }
-                ? commonOptions.ProviderOrder
-                : new CommonSecretsOptions().ProviderOrder;
-
+            string[] providerOrder = CommonSecretsPolicy.ResolveProviderOrder(commonOptions);
             List<ISecretProvider> orderedProviders = [];
+
             foreach (string providerName in providerOrder)
             {
                 if (!providersByName.TryGetValue(providerName, out ISecretProvider? secretProvider))

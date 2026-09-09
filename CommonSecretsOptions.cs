@@ -1,13 +1,18 @@
 namespace Common.Secrets;
 
+public enum SecretsEnvironmentMode
+{
+    Production = 0,
+    Development = 1,
+    OfflineDevelopment = 2,
+    Test = 3
+}
+
 public sealed class CommonSecretsOptions
 {
-    public string[] ProviderOrder { get; init; } =
-    [
-        "Environment",
-        "OpenBao",
-        "Configuration"
-    ];
+    public SecretsEnvironmentMode Mode { get; init; } = SecretsEnvironmentMode.Production;
+
+    public string[]? ProviderOrder { get; init; }
 
     public string WorkloadName { get; init; } = string.Empty;
 
