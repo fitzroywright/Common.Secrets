@@ -11,6 +11,7 @@ public sealed class OpenBaoOptions
     public string SecretIdEnvironmentVariable { get; init; } = "OPENBAO_SECRET_ID";
     public string? SecretIdFile { get; init; }
     public bool DeleteSecretIdFileAfterRead { get; init; } = true;
+    public bool ClearSecretIdEnvironmentVariableAfterRead { get; init; } = true;
     public bool RequireSecretIdFileInProduction { get; init; }
     public string? DevelopmentToken { get; init; }
     public string DevelopmentTokenEnvironmentVariable { get; init; } = "OPENBAO_TOKEN";
