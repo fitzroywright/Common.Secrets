@@ -1,3 +1,4 @@
+using Common.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -45,6 +46,8 @@ public static class ServiceCollectionExtensions
                 client,
                 provider.GetRequiredService<IOpenBaoAuthenticator>());
         });
+        services.AddSingleton<ISecretProviderHealth>(provider => provider.GetRequiredService<OpenBaoSecretProvider>());
+        services.AddSingleton<ISecretProviderHealth>(provider => provider.GetRequiredService<BitwardenSecretProvider>());
         services.AddSingleton<ISecretProvider>(provider =>
         {
             ISecretTelemetrySink telemetry = provider.GetRequiredService<ISecretTelemetrySink>();
@@ -71,6 +74,16 @@ public static class ServiceCollectionExtensions
             return new ChainedSecretProvider(orderedProviders);
         });
 
+        return services;
+    }
+
+    public static IServiceCollection AddCommonSecretsDiagnostics(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.AddCommonDiagnostics();
+        services.Replace(ServiceDescriptor.Singleton<ISecretTelemetrySink, CommonDiagnosticsSecretTelemetrySink>());
+        services.AddScoped<IDiagnosticCheck, CommonSecretsDiagnosticCheck>();
         return services;
     }
 
