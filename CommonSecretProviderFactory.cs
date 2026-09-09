@@ -11,23 +11,24 @@ public static class CommonSecretProviderFactory
         CommonSecretsOptions commonOptions = configuration
             .GetSection("CommonSecrets")
             .Get<CommonSecretsOptions>() ?? new CommonSecretsOptions();
-
         OpenBaoOptions openBaoOptions = configuration
             .GetSection("CommonSecrets:OpenBao")
             .Get<OpenBaoOptions>() ?? new OpenBaoOptions();
-
         BitwardenSecretsManagerOptions bitwardenOptions = configuration
             .GetSection("CommonSecrets:Bitwarden")
             .Get<BitwardenSecretsManagerOptions>() ?? new BitwardenSecretsManagerOptions();
-
         BitwardenPasswordManagerOptions passwordManagerOptions = configuration
             .GetSection("CommonSecrets:BitwardenPasswordManager")
             .Get<BitwardenPasswordManagerOptions>() ?? new BitwardenPasswordManagerOptions();
 
+        CommonSecretsPolicy.Validate(commonOptions, openBaoOptions);
+
         ISecretProvider environmentProvider = new EnvironmentSecretProvider();
         ISecretProvider passwordManagerProvider = new BitwardenPasswordManagerSecretProvider(passwordManagerOptions);
         ISecretProvider secretsManagerProvider = new BitwardenSecretProvider(bitwardenOptions);
-        ISecretProvider openBaoProvider = new OpenBaoSecretProvider(openBaoOptions);
+        HttpClient openBaoHttpClient = new();
+        IOpenBaoAuthenticator authenticator = new OpenBaoAuthenticator(openBaoOptions, commonOptions, openBaoHttpClient);
+        ISecretProvider openBaoProvider = new OpenBaoSecretProvider(openBaoOptions, openBaoHttpClient, authenticator);
         ISecretProvider configurationProvider = new ConfigurationSecretProvider(configuration);
 
         Dictionary<string, ISecretProvider> providersByName = new(StringComparer.OrdinalIgnoreCase)
@@ -40,10 +41,7 @@ public static class CommonSecretProviderFactory
             ["Configuration"] = configurationProvider
         };
 
-        string[] providerOrder = commonOptions.ProviderOrder is { Length: > 0 }
-            ? commonOptions.ProviderOrder
-            : new CommonSecretsOptions().ProviderOrder;
-
+        string[] providerOrder = CommonSecretsPolicy.ResolveProviderOrder(commonOptions);
         List<ISecretProvider> orderedProviders = [];
         HashSet<ISecretProvider> includedProviders = new(ReferenceEqualityComparer.Instance);
 
