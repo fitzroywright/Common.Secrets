@@ -21,6 +21,7 @@ public sealed class OpenBaoAuthenticator : IOpenBaoAuthenticator, IOpenBaoTokenL
     private readonly HttpClient httpClient;
     private readonly SemaphoreSlim gate = new(1, 1);
     private string? cachedToken;
+    private string? cachedBootstrapSecretId;
     private DateTimeOffset expiresAt;
     private DateTimeOffset renewAt;
     private bool renewable;
@@ -89,11 +90,19 @@ public sealed class OpenBaoAuthenticator : IOpenBaoAuthenticator, IOpenBaoTokenL
 
     public async ValueTask DisposeAsync()
     {
-        if (options.RevokeTokenOnDispose && commonOptions.Mode == SecretsEnvironmentMode.Production)
+        try
         {
-            try { await RevokeAsync().ConfigureAwait(false); } catch { ClearToken(); }
+            if (options.RevokeTokenOnDispose && commonOptions.Mode == SecretsEnvironmentMode.Production)
+            {
+                try { await RevokeAsync().ConfigureAwait(false); } catch { ClearToken(); }
+            }
         }
-        gate.Dispose();
+        finally
+        {
+            cachedBootstrapSecretId = null;
+            ClearToken();
+            gate.Dispose();
+        }
     }
 
     private async Task<string> LoginAsync(CancellationToken cancellationToken)
@@ -120,6 +129,11 @@ public sealed class OpenBaoAuthenticator : IOpenBaoAuthenticator, IOpenBaoTokenL
 
     private async Task<string> ReadBootstrapSecretIdAsync(CancellationToken cancellationToken)
     {
+        if (!string.IsNullOrWhiteSpace(cachedBootstrapSecretId))
+        {
+            return cachedBootstrapSecretId;
+        }
+
         if (!string.IsNullOrWhiteSpace(options.SecretIdFile))
         {
             string path = Path.GetFullPath(options.SecretIdFile);
@@ -129,11 +143,17 @@ public sealed class OpenBaoAuthenticator : IOpenBaoAuthenticator, IOpenBaoTokenL
             }
 
             string secretId = (await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false)).Trim();
+            if (string.IsNullOrWhiteSpace(secretId))
+            {
+                throw new InvalidOperationException("Configured OpenBao SecretId bootstrap file is empty.");
+            }
+
+            cachedBootstrapSecretId = secretId;
             if (options.DeleteSecretIdFileAfterRead)
             {
                 File.Delete(path);
             }
-            return secretId;
+            return cachedBootstrapSecretId;
         }
 
         if (commonOptions.Mode == SecretsEnvironmentMode.Production && options.RequireSecretIdFileInProduction)
@@ -142,11 +162,15 @@ public sealed class OpenBaoAuthenticator : IOpenBaoAuthenticator, IOpenBaoTokenL
         }
 
         string secretIdFromEnvironment = Environment.GetEnvironmentVariable(options.SecretIdEnvironmentVariable)?.Trim() ?? string.Empty;
-        if (!string.IsNullOrWhiteSpace(secretIdFromEnvironment) && options.ClearSecretIdEnvironmentVariableAfterRead)
+        if (!string.IsNullOrWhiteSpace(secretIdFromEnvironment))
         {
-            Environment.SetEnvironmentVariable(options.SecretIdEnvironmentVariable, null);
+            cachedBootstrapSecretId = secretIdFromEnvironment;
+            if (options.ClearSecretIdEnvironmentVariableAfterRead)
+            {
+                Environment.SetEnvironmentVariable(options.SecretIdEnvironmentVariable, null);
+            }
         }
-        return secretIdFromEnvironment;
+        return cachedBootstrapSecretId ?? string.Empty;
     }
 
     private async Task<bool> TryRenewAsync(string token, CancellationToken cancellationToken)
