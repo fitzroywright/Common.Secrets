@@ -7,7 +7,7 @@ namespace Common.Secrets.Tests;
 public sealed class ServiceCollectionExtensionsTests
 {
     [Fact]
-    public void DevelopmentModeResolvesCanonicalBitwardenSecretsManagerProvider()
+    public async Task DevelopmentModeResolvesCanonicalBitwardenSecretsManagerProvider()
     {
         IConfiguration configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -21,7 +21,7 @@ public sealed class ServiceCollectionExtensionsTests
         ServiceCollection services = new();
         services.AddCommonSecrets(configuration);
 
-        using ServiceProvider provider = services.BuildServiceProvider();
+        await using ServiceProvider provider = services.BuildServiceProvider();
         ISecretProvider secretProvider = provider.GetRequiredService<ISecretProvider>();
 
         Assert.NotNull(secretProvider);
@@ -29,7 +29,7 @@ public sealed class ServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void DevelopmentModeResolvesPasswordManagerProvider()
+    public async Task DevelopmentModeResolvesPasswordManagerProvider()
     {
         IConfiguration configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -43,7 +43,7 @@ public sealed class ServiceCollectionExtensionsTests
         ServiceCollection services = new();
         services.AddCommonSecrets(configuration);
 
-        using ServiceProvider provider = services.BuildServiceProvider();
+        await using ServiceProvider provider = services.BuildServiceProvider();
         ISecretProvider secretProvider = provider.GetRequiredService<ISecretProvider>();
 
         Assert.NotNull(secretProvider);
@@ -51,7 +51,7 @@ public sealed class ServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void LegacyBitwardenAliasStillResolvesSecretsManager()
+    public async Task LegacyBitwardenAliasStillResolvesSecretsManager()
     {
         IConfiguration configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -65,7 +65,7 @@ public sealed class ServiceCollectionExtensionsTests
         ServiceCollection services = new();
         services.AddCommonSecrets(configuration);
 
-        using ServiceProvider provider = services.BuildServiceProvider();
+        await using ServiceProvider provider = services.BuildServiceProvider();
         Assert.NotNull(provider.GetRequiredService<ISecretProvider>());
     }
 }
