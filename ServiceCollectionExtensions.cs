@@ -57,6 +57,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ISecretProviderHealth>(provider => provider.GetRequiredService<OpenBaoSecretProvider>());
         services.AddSingleton<ISecretProviderHealth>(provider => provider.GetRequiredService<BitwardenPasswordManagerSecretProvider>());
         services.AddSingleton<ISecretProviderHealth>(provider => provider.GetRequiredService<BitwardenSecretProvider>());
+        services.AddSingleton<ICommonSecretsHealthCheck, CommonSecretsHealthCheck>();
 
         services.AddSingleton<ISecretProvider>(provider =>
         {
@@ -82,9 +83,7 @@ public static class ServiceCollectionExtensions
             {
                 string providerName = NormalizeProviderName(configuredProviderName);
                 if (!providersByName.TryGetValue(providerName, out ISecretProvider? secretProvider))
-                {
                     throw new InvalidOperationException($"Unknown Common.Secrets provider '{configuredProviderName}'.");
-                }
 
                 orderedProviders.Add(secretProvider);
             }
@@ -98,25 +97,17 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddCommonSecretsDiagnostics(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
-
         services.AddCommonDiagnostics();
         services.Replace(ServiceDescriptor.Singleton<ISecretTelemetrySink, CommonDiagnosticsSecretTelemetrySink>());
         services.AddScoped<IDiagnosticCheck, CommonSecretsDiagnosticCheck>();
         return services;
     }
 
-    private static ISecretProvider Observe(
-        ISecretProvider provider,
-        ISecretTelemetrySink telemetry,
-        CommonSecretsOptions options)
-    {
-        return new ObservedSecretProvider(provider, telemetry, options);
-    }
+    private static ISecretProvider Observe(ISecretProvider provider, ISecretTelemetrySink telemetry, CommonSecretsOptions options)
+        => new ObservedSecretProvider(provider, telemetry, options);
 
     private static string NormalizeProviderName(string providerName)
-    {
-        return string.Equals(providerName, "Bitwarden", StringComparison.OrdinalIgnoreCase)
+        => string.Equals(providerName, "Bitwarden", StringComparison.OrdinalIgnoreCase)
             ? "BitwardenSecretsManager"
             : providerName;
-    }
 }
