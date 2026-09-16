@@ -137,26 +137,29 @@ public sealed class OpenBaoAuthenticator : IOpenBaoAuthenticator, IOpenBaoTokenL
         if (!string.IsNullOrWhiteSpace(options.SecretIdFile))
         {
             string path = Path.GetFullPath(options.SecretIdFile);
-            if (!File.Exists(path))
+            if (File.Exists(path))
             {
-                throw new InvalidOperationException("Configured OpenBao SecretId bootstrap file does not exist.");
+                string secretId = (await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false)).Trim();
+                if (string.IsNullOrWhiteSpace(secretId))
+                {
+                    throw new InvalidOperationException("Configured OpenBao SecretId bootstrap file is empty.");
+                }
+
+                cachedBootstrapSecretId = secretId;
+                if (options.DeleteSecretIdFileAfterRead)
+                {
+                    File.Delete(path);
+                }
+                return cachedBootstrapSecretId;
             }
 
-            string secretId = (await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false)).Trim();
-            if (string.IsNullOrWhiteSpace(secretId))
+            if (commonOptions.Mode == SecretsEnvironmentMode.Production && options.RequireSecretIdFileInProduction)
             {
-                throw new InvalidOperationException("Configured OpenBao SecretId bootstrap file is empty.");
+                throw new InvalidOperationException(
+                    "Production OpenBao bootstrap requires a protected SecretId file, but the configured file was not found.");
             }
-
-            cachedBootstrapSecretId = secretId;
-            if (options.DeleteSecretIdFileAfterRead)
-            {
-                File.Delete(path);
-            }
-            return cachedBootstrapSecretId;
         }
-
-        if (commonOptions.Mode == SecretsEnvironmentMode.Production && options.RequireSecretIdFileInProduction)
+        else if (commonOptions.Mode == SecretsEnvironmentMode.Production && options.RequireSecretIdFileInProduction)
         {
             throw new InvalidOperationException("Production OpenBao bootstrap requires a protected one-time SecretId file.");
         }
