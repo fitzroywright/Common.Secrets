@@ -43,6 +43,45 @@ public sealed class OpenBaoAuthenticatorTests
     }
 
     [Fact]
+    public async Task ProductionFallsBackToEnvironmentWhenOptionalSecretIdFileIsMissing()
+    {
+        const string secretIdVariable = "COMMON_SECRETS_TEST_FALLBACK_SECRET_ID";
+        string path = Path.Combine(Path.GetTempPath(), $"missing-{Guid.NewGuid():N}.secretid");
+        string? previous = Environment.GetEnvironmentVariable(secretIdVariable);
+        Environment.SetEnvironmentVariable(secretIdVariable, "environment-secret-id");
+
+        try
+        {
+            AuthHandler handler = new();
+            using HttpClient client = new(handler);
+            OpenBaoOptions options = new()
+            {
+                Enabled = true,
+                Address = "https://openbao.internal:8200",
+                RoleId = "requestportal-role",
+                SecretIdFile = path,
+                SecretIdEnvironmentVariable = secretIdVariable,
+                RequireSecretIdFileInProduction = false,
+                RevokeTokenOnDispose = false
+            };
+            await using OpenBaoAuthenticator authenticator = new(
+                options,
+                new CommonSecretsOptions { Mode = SecretsEnvironmentMode.Production },
+                client);
+
+            string token = await authenticator.GetTokenAsync();
+
+            Assert.Equal("issued-short-lived-token", token);
+            Assert.Contains("environment-secret-id", handler.RequestBody, StringComparison.Ordinal);
+            Assert.Null(Environment.GetEnvironmentVariable(secretIdVariable));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(secretIdVariable, previous);
+        }
+    }
+
+    [Fact]
     public async Task ProductionCanRequireOneTimeProtectedSecretIdFile()
     {
         string path = Path.Combine(Path.GetTempPath(), $"common-secrets-{Guid.NewGuid():N}.secretid");
@@ -82,23 +121,36 @@ public sealed class OpenBaoAuthenticatorTests
     [Fact]
     public async Task ProductionFailsClosedWhenProtectedFileIsRequiredButMissing()
     {
+        const string secretIdVariable = "COMMON_SECRETS_TEST_REQUIRED_FILE_SECRET_ID";
         string path = Path.Combine(Path.GetTempPath(), $"missing-{Guid.NewGuid():N}.secretid");
-        using HttpClient client = new(new AuthHandler());
-        OpenBaoOptions options = new()
-        {
-            Enabled = true,
-            Address = "https://openbao.internal:8200",
-            RoleId = "cafeteria-role",
-            SecretIdFile = path,
-            RequireSecretIdFileInProduction = true,
-            RevokeTokenOnDispose = false
-        };
-        await using OpenBaoAuthenticator authenticator = new(
-            options,
-            new CommonSecretsOptions { Mode = SecretsEnvironmentMode.Production },
-            client);
+        string? previous = Environment.GetEnvironmentVariable(secretIdVariable);
+        Environment.SetEnvironmentVariable(secretIdVariable, "must-not-fallback");
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => authenticator.GetTokenAsync());
+        try
+        {
+            using HttpClient client = new(new AuthHandler());
+            OpenBaoOptions options = new()
+            {
+                Enabled = true,
+                Address = "https://openbao.internal:8200",
+                RoleId = "cafeteria-role",
+                SecretIdFile = path,
+                SecretIdEnvironmentVariable = secretIdVariable,
+                RequireSecretIdFileInProduction = true,
+                RevokeTokenOnDispose = false
+            };
+            await using OpenBaoAuthenticator authenticator = new(
+                options,
+                new CommonSecretsOptions { Mode = SecretsEnvironmentMode.Production },
+                client);
+
+            await Assert.ThrowsAsync<InvalidOperationException>(() => authenticator.GetTokenAsync());
+            Assert.Equal("must-not-fallback", Environment.GetEnvironmentVariable(secretIdVariable));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(secretIdVariable, previous);
+        }
     }
 
     [Fact]
