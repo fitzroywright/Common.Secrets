@@ -1,62 +1,53 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Common.Secrets;
 
+/// <summary>
+/// Builds the standard Common.Secrets provider graph early enough for bootstrap-time
+/// secret resolution, then allows the same resolved graph to be registered into the
+/// application's service collection. Bootstrap and runtime therefore use the same
+/// provider policy and instances.
+/// </summary>
 public sealed class CommonSecretsBootstrapRuntime : IAsyncDisposable
 {
-    private readonly HttpClient httpClient;
+    private readonly ServiceProvider bootstrapServices;
     private bool disposed;
 
-    private CommonSecretsBootstrapRuntime(
-        CommonSecretsOptions commonOptions,
-        OpenBaoOptions openBaoOptions,
-        HttpClient httpClient,
-        OpenBaoAuthenticator authenticator,
-        OpenBaoSecretProvider provider)
+    private CommonSecretsBootstrapRuntime(ServiceProvider bootstrapServices)
     {
-        CommonOptions = commonOptions;
-        OpenBaoOptions = openBaoOptions;
-        this.httpClient = httpClient;
-        Authenticator = authenticator;
-        Provider = provider;
+        this.bootstrapServices = bootstrapServices;
+        Provider = bootstrapServices.GetRequiredService<ISecretProvider>();
+        HealthCheck = bootstrapServices.GetRequiredService<ICommonSecretsHealthCheck>();
+        CommonOptions = bootstrapServices.GetRequiredService<CommonSecretsOptions>();
+        OpenBaoOptions = bootstrapServices.GetRequiredService<OpenBaoOptions>();
+        BitwardenPasswordManagerOptions = bootstrapServices.GetRequiredService<BitwardenPasswordManagerOptions>();
+        BitwardenSecretsManagerOptions = bootstrapServices.GetRequiredService<BitwardenSecretsManagerOptions>();
+        ProviderHealth = bootstrapServices.GetServices<ISecretProviderHealth>().ToArray();
     }
 
     public CommonSecretsOptions CommonOptions { get; }
 
     public OpenBaoOptions OpenBaoOptions { get; }
 
-    public OpenBaoAuthenticator Authenticator { get; }
+    public BitwardenPasswordManagerOptions BitwardenPasswordManagerOptions { get; }
 
-    public OpenBaoSecretProvider Provider { get; }
+    public BitwardenSecretsManagerOptions BitwardenSecretsManagerOptions { get; }
+
+    public ISecretProvider Provider { get; }
+
+    public ICommonSecretsHealthCheck HealthCheck { get; }
+
+    public IReadOnlyList<ISecretProviderHealth> ProviderHealth { get; }
 
     public static CommonSecretsBootstrapRuntime Create(IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);
 
-        CommonSecretsOptions commonOptions = configuration
-            .GetSection("CommonSecrets")
-            .Get<CommonSecretsOptions>() ?? new CommonSecretsOptions();
-        OpenBaoOptions openBaoOptions = configuration
-            .GetSection("CommonSecrets:OpenBao")
-            .Get<OpenBaoOptions>() ?? new OpenBaoOptions();
-
-        CommonSecretsPolicy.Validate(commonOptions, openBaoOptions);
-        if (!openBaoOptions.Enabled)
-        {
-            throw new InvalidOperationException("Common.Secrets bootstrap runtime requires OpenBao to be enabled.");
-        }
-
-        HttpClient httpClient = new();
-        OpenBaoAuthenticator authenticator = new(openBaoOptions, commonOptions, httpClient);
-        OpenBaoSecretProvider provider = new(openBaoOptions, httpClient, authenticator);
-        return new CommonSecretsBootstrapRuntime(
-            commonOptions,
-            openBaoOptions,
-            httpClient,
-            authenticator,
-            provider);
+        ServiceCollection services = new();
+        services.AddCommonSecrets(configuration);
+        ServiceProvider provider = services.BuildServiceProvider();
+        return new CommonSecretsBootstrapRuntime(provider);
     }
 
     public IServiceCollection Register(IServiceCollection services)
@@ -65,16 +56,17 @@ public sealed class CommonSecretsBootstrapRuntime : IAsyncDisposable
 
         services.AddSingleton(CommonOptions);
         services.AddSingleton(OpenBaoOptions);
-        services.TryAddSingleton<ISecretTelemetrySink, NullSecretTelemetrySink>();
-        services.AddSingleton<IOpenBaoAuthenticator>(_ => Authenticator);
-        services.AddSingleton<IOpenBaoTokenLifecycle>(_ => Authenticator);
-        services.AddSingleton<OpenBaoSecretProvider>(_ => Provider);
-        services.AddSingleton<ISecretProviderHealth>(_ => Provider);
-        services.AddSingleton<ISecretProvider>(serviceProvider =>
-            new ObservedSecretProvider(
-                Provider,
-                serviceProvider.GetRequiredService<ISecretTelemetrySink>(),
-                CommonOptions));
+        services.AddSingleton(BitwardenPasswordManagerOptions);
+        services.AddSingleton(BitwardenSecretsManagerOptions);
+        services.AddSingleton(Provider);
+        services.AddSingleton<ISecretProvider>(_ => Provider);
+        services.AddSingleton<ICommonSecretsHealthCheck>(_ => HealthCheck);
+
+        foreach (ISecretProviderHealth providerHealth in ProviderHealth)
+        {
+            services.AddSingleton(typeof(ISecretProviderHealth), providerHealth);
+        }
+
         return services;
     }
 
@@ -82,9 +74,6 @@ public sealed class CommonSecretsBootstrapRuntime : IAsyncDisposable
     {
         if (disposed) return;
         disposed = true;
-
-        Provider.Dispose();
-        await Authenticator.DisposeAsync().ConfigureAwait(false);
-        httpClient.Dispose();
+        await bootstrapServices.DisposeAsync().ConfigureAwait(false);
     }
 }
