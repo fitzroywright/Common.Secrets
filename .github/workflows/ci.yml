@@ -22,5 +22,6 @@ jobs:
         with:
           dotnet-version: '10.0.x'
       - run: dotnet restore Common.Secrets.slnx
+      - run: dotnet build Common.Secrets.slnx --configuration Debug --no-restore
       - run: dotnet build Common.Secrets.slnx --configuration Release --no-restore
       - run: dotnet test Common.Secrets.slnx --configuration Release --no-build
