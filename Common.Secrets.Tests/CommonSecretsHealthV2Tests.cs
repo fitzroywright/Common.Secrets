@@ -21,7 +21,7 @@ public sealed class CommonSecretsHealthV2Tests
 
         Assert.Equal(["Missing"], result.MissingRequiredSecrets);
         Assert.True(result.IsReachable);
-        Assert.DoesNotContain("super-secret-value", result.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("super-secret-value", result.Message);
     }
 
     [Fact]
