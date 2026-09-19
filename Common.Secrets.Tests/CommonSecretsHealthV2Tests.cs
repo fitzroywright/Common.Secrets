@@ -27,7 +27,7 @@ public sealed class CommonSecretsHealthV2Tests
     [Fact]
     public async Task Authentication_failure_is_distinct_from_reachability_unknown()
     {
-        var provider = new FakeSecretProvider([]);
+        var provider = new FakeSecretProvider(new Dictionary<string,string?>());
         var authFailure = new FakeHealthCheck(new CommonSecretsHealth(
             true,
             false,
@@ -47,7 +47,7 @@ public sealed class CommonSecretsHealthV2Tests
     [Fact]
     public async Task Unreachable_provider_without_auth_evidence_remains_auth_unknown()
     {
-        var provider = new FakeSecretProvider([]);
+        var provider = new FakeSecretProvider(new Dictionary<string,string?>());
         var unavailable = new FakeHealthCheck(new CommonSecretsHealth(
             true,
             false,
