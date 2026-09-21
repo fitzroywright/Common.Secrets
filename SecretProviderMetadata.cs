@@ -22,9 +22,17 @@ public static class SecretProviderMetadataResolver
             .GetSection("CommonSecrets")
             .Get<CommonSecretsOptions>() ?? new CommonSecretsOptions();
 
-        string[] providerOrder = CommonSecretsPolicy.ResolveProviderOrder(commonOptions);
-        string activeProvider = providerOrder.FirstOrDefault() ?? "None";
-        string? managementUrl = ResolveManagementUrl(configuration, activeProvider);
+        IReadOnlyDictionary<string, SecretProviderDefinition> providers =
+            SecretProviderConfiguration.ReadProviders(configuration);
+
+        string[] providerOrder =
+            CommonSecretsPolicy.ResolveProviderOrder(commonOptions, providers);
+
+        string activeProvider =
+            providerOrder.FirstOrDefault() ?? "None";
+
+        string? managementUrl =
+            ResolveManagementUrl(providers, activeProvider);
 
         return new SecretProviderMetadata(
             commonOptions.Mode,
@@ -33,11 +41,22 @@ public static class SecretProviderMetadataResolver
             managementUrl);
     }
 
-    private static string? ResolveManagementUrl(IConfiguration configuration, string provider)
+    private static string? ResolveManagementUrl(
+        IReadOnlyDictionary<string, SecretProviderDefinition> providers,
+        string providerName)
     {
-        // Provider-specific configuration is interpreted here, inside Common.Secrets.
-        if (provider.Equals("OpenBao", StringComparison.OrdinalIgnoreCase))
-            return NullIfBlank(configuration["CommonSecrets:OpenBao:Address"]);
+        if (!providers.TryGetValue(providerName, out SecretProviderDefinition? definition))
+            return null;
+
+        // Provider-specific settings remain interpreted inside Common.Secrets.
+        if (definition.Type.Equals("OpenBao", StringComparison.OrdinalIgnoreCase))
+            return NullIfBlank(definition.Settings["Address"]);
+
+        if (definition.Type.Equals("BitwardenPasswordManager", StringComparison.OrdinalIgnoreCase))
+            return NullIfBlank(definition.Settings["BaseUrl"]);
+
+        if (definition.Type.Equals("BitwardenSecretsManager", StringComparison.OrdinalIgnoreCase))
+            return NullIfBlank(definition.Settings["ServerUrl"]);
 
         return null;
     }
