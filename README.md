@@ -1,12 +1,16 @@
 # Common.Secrets
 
-Reusable secret retrieval, provider composition, and OpenBao integration for the application family.
+Reusable secret retrieval and provider composition for the Aegis application family.
 
 ## Repository policy
 
-`main` is the authoritative trunk and the only branch that should be used for ongoing development, integration, packaging, and releases. Older development, hardening, integration, and live-test branches are historical once their work has been incorporated into `main`.
+`main` is the authoritative trunk and the only branch used for ongoing development,
+integration, packaging, and releases.
 
-`Common.Secrets` deliberately contains no application-specific secret names. Consumers own their secret names and provider precedence; this package owns retrieval, provider composition, policy enforcement, provider observation/telemetry, and reusable secret-store integration behavior.
+Common.Secrets deliberately contains no application-specific secret names. Consumers
+own their secret names and provider precedence. The library owns retrieval, provider
+composition, policy enforcement, provider observation/telemetry, and reusable provider
+implementations.
 
 ## Core API
 
@@ -15,89 +19,124 @@ ISecretProvider.GetAsync(name)
 ISecretProvider.GetRequiredAsync(name)
 ```
 
-## Configurable provider order
+## Provider-instance configuration contract
 
-Every consuming application can choose its own provider precedence through `CommonSecrets:ProviderOrder`.
+Common.Secrets uses one provider-neutral configuration structure. There is no legacy
+`CommonSecrets:OpenBao`, `CommonSecrets:Bitwarden`, or provider alias parser.
 
-The default order is:
+Each provider instance has:
 
-1. Environment
-2. Bitwarden Password Manager
-3. Bitwarden Secrets Manager
-4. OpenBao
-5. .NET Configuration
+- an application-selected instance `Name`;
+- a provider `Type`;
+- a provider-owned `Settings` payload.
 
-Example:
+`ProviderOrder` references provider instance names, not provider types.
 
 ```json
 {
   "CommonSecrets": {
+    "Mode": "Production",
     "ProviderOrder": [
-      "Environment",
-      "BitwardenPasswordManager",
-      "BitwardenSecretsManager",
-      "OpenBao",
-      "Configuration"
-    ]
-  }
-}
-```
-
-An application can use a different order or omit providers entirely. A server application can prefer Environment/OpenBao/Configuration while a developer workstation can prefer Environment/Bitwarden Password Manager/Configuration.
-
-The first provider returning a non-empty secret wins. Provider names are case-insensitive. `Bitwarden` remains supported as a legacy alias for `BitwardenSecretsManager`, but the canonical provider name is `BitwardenSecretsManager`. A provider may appear only once in the configured order.
-
-## OpenBao
-
-OpenBao support uses the HTTP API and the KV v2 secret engine. A secret requested as:
-
-```text
-Database:Password
-```
-
-is read by default from:
-
-```text
-/v1/secret/data/aegis/Database/Password
-```
-
-with the secret value stored in the KV document's `value` field.
-
-Example application configuration:
-
-```json
-{
-  "CommonSecrets": {
-    "OpenBao": {
-      "Enabled": true,
-      "Address": "https://openbao.internal.example:8200",
-      "MountPath": "secret",
-      "BasePath": "aegis/studio",
-      "RequireHttps": true
+      "PrimarySecrets"
+    ],
+    "Providers": {
+      "PrimarySecrets": {
+        "Type": "OpenBao",
+        "Settings": {
+          "Enabled": true,
+          "Address": "https://openbao.internal.example:8200",
+          "MountPath": "secret",
+          "BasePath": "aegis/studio",
+          "RequireHttps": true
+        }
+      }
     }
   }
 }
 ```
 
-Bootstrap credentials must remain outside source control. `OPENBAO_TOKEN` can be supplied through the process/container environment when token bootstrap is appropriate. `TokenEnvironmentVariable` can be changed if a host needs a different environment-variable name. A `Token` configuration value exists for controlled bootstrap scenarios but must not be committed to source control.
+A development application can define multiple named instances and order them
+independently:
 
-OpenBao integration includes authentication/bootstrap behavior, reauthentication support, lease-lifecycle hardening, provider observation/telemetry, and integration with `Common.Diagnostics`. Diagnostic and telemetry output must never expose retrieved secret values, tokens, passwords, or equivalent secret material.
+```json
+{
+  "CommonSecrets": {
+    "Mode": "Development",
+    "ProviderOrder": [
+      "ProcessEnvironment",
+      "DeveloperVault",
+      "LocalConfiguration"
+    ],
+    "Providers": {
+      "ProcessEnvironment": {
+        "Type": "Environment",
+        "Settings": {}
+      },
+      "DeveloperVault": {
+        "Type": "BitwardenPasswordManager",
+        "Settings": {
+          "Enabled": true,
+          "BaseUrl": "http://127.0.0.1:8087/"
+        }
+      },
+      "LocalConfiguration": {
+        "Type": "Configuration",
+        "Settings": {}
+      }
+    }
+  }
+}
+```
 
-For an internal OpenBao deployment, expose the API only to required application hosts, use TLS in production, and issue application-specific authentication/policies restricted to the application's required secret paths.
+If exactly one provider instance is configured, `ProviderOrder` may be omitted.
+With multiple providers, the order must be explicit.
 
-## Bitwarden
+The first provider returning a non-empty secret wins.
 
-`BitwardenPasswordManager` and `BitwardenSecretsManager` are separate providers so applications can choose the appropriate trust model and order independently.
+## Supported provider types
 
-Password Manager is most suitable for interactive/developer scenarios. Secrets Manager and OpenBao are better suited to unattended services.
+- `Environment`
+- `Configuration`
+- `OpenBao`
+- `BitwardenPasswordManager`
+- `BitwardenSecretsManager`
+
+Provider instance names are arbitrary and may be deployment-specific. Multiple
+instances of the same provider type are supported.
+
+## Secret Zero
+
+Bootstrap secret material remains outside the provider settings payload.
+
+Provider settings may identify the external bootstrap mechanism (for example the
+name of an environment variable or protected file), but the bootstrap credential
+itself must not be committed to application configuration or source control.
+
+For OpenBao AppRole bootstrap, the Secret ID remains external through the configured
+environment-variable or protected-file mechanism. Common.Secrets consumes and, where
+configured, clears/deletes that bootstrap material after use.
+
+## Policy
+
+Production mode fails closed and permits only OpenBao provider instances. Production
+OpenBao must be enabled and must require HTTPS.
+
+Development permits Environment, Configuration, OpenBao, Bitwarden Password Manager,
+and Bitwarden Secrets Manager.
+
+OfflineDevelopment permits only local/loopback OpenBao plus Environment and
+Configuration.
+
+Test mode permits Environment and Configuration.
 
 ## Failure and recovery expectations
 
-Common.Secrets should fail safely when a provider is unavailable, surface useful provider/diagnostic telemetry without exposing secret material, and permit recovery/reauthentication when the provider becomes available again. Production validation should explicitly prove the sequence: successful retrieval -> provider outage -> controlled failure -> provider recovery -> reauthentication -> successful retrieval without requiring an application restart where the provider supports that lifecycle.
+Common.Secrets should fail safely when a provider is unavailable, surface useful
+provider-neutral telemetry without exposing secret material, and permit recovery or
+reauthentication when the provider becomes available again.
 
-## Current maturity
-
-Provider composition, OpenBao integration, Secret Zero hardening, lease lifecycle, reauthentication, telemetry, diagnostics integration, and automated tests are implemented on `main`. Remaining work is primarily operational proof against real OpenBao and real consuming applications, including outage/recovery/reauthentication and production credential lifecycle behavior.
+Observability must never be allowed to fail secret retrieval solely because a
+telemetry sink is unavailable.
 
 ## Development
 

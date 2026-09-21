@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace Common.Secrets.Tests;
@@ -7,95 +6,139 @@ namespace Common.Secrets.Tests;
 public sealed class CommonSecretsPolicyTests
 {
     [Fact]
-    public void ProductionDefaultsToOpenBaoOnly()
+    public void SingleProviderMayOmitProviderOrder()
     {
-        CommonSecretsOptions options = new();
-
-        string[] providers = CommonSecretsPolicy.ResolveProviderOrder(options);
-
-        Assert.Equal(["OpenBao"], providers);
-    }
-
-    [Fact]
-    public void ProductionRejectsDeveloperFallbackProviders()
-    {
-        CommonSecretsOptions options = new()
+        IConfiguration configuration = Build(new Dictionary<string, string?>
         {
-            Mode = SecretsEnvironmentMode.Production,
-            ProviderOrder = ["OpenBao", "Configuration"]
-        };
+            ["CommonSecrets:Mode"] = "Development",
+            ["CommonSecrets:Providers:OnlyProvider:Type"] = "Configuration"
+        });
 
-        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
-            () => CommonSecretsPolicy.ResolveProviderOrder(options));
+        CommonSecretsOptions options =
+            configuration.GetSection("CommonSecrets")
+                .Get<CommonSecretsOptions>()!;
 
-        Assert.Contains("not allowed", exception.Message, StringComparison.OrdinalIgnoreCase);
+        IReadOnlyDictionary<string, SecretProviderDefinition> providers =
+            SecretProviderConfiguration.ReadProviders(configuration);
+
+        Assert.Equal(
+            ["OnlyProvider"],
+            CommonSecretsPolicy.ResolveProviderOrder(options, providers));
     }
 
     [Fact]
-    public void ProductionRequiresOpenBaoAndHttps()
+    public void MultipleProvidersRequireExplicitOrder()
     {
-        CommonSecretsOptions options = new() { Mode = SecretsEnvironmentMode.Production };
-        OpenBaoOptions disabled = new() { Enabled = false, RequireHttps = true };
-        OpenBaoOptions insecure = new() { Enabled = true, RequireHttps = false };
+        IConfiguration configuration = Build(new Dictionary<string, string?>
+        {
+            ["CommonSecrets:Mode"] = "Development",
+            ["CommonSecrets:Providers:One:Type"] = "Configuration",
+            ["CommonSecrets:Providers:Two:Type"] = "Environment"
+        });
 
-        Assert.Throws<InvalidOperationException>(() => CommonSecretsPolicy.Validate(options, disabled));
-        Assert.Throws<InvalidOperationException>(() => CommonSecretsPolicy.Validate(options, insecure));
+        CommonSecretsOptions options =
+            configuration.GetSection("CommonSecrets")
+                .Get<CommonSecretsOptions>()!;
+
+        IReadOnlyDictionary<string, SecretProviderDefinition> providers =
+            SecretProviderConfiguration.ReadProviders(configuration);
+
+        Assert.Throws<InvalidOperationException>(
+            () => CommonSecretsPolicy.ResolveProviderOrder(options, providers));
+    }
+
+    [Fact]
+    public void ProductionRejectsNonOpenBaoProviderType()
+    {
+        IConfiguration configuration = Build(new Dictionary<string, string?>
+        {
+            ["CommonSecrets:Mode"] = "Production",
+            ["CommonSecrets:ProviderOrder:0"] = "Fallback",
+            ["CommonSecrets:Providers:Fallback:Type"] = "Configuration"
+        });
+
+        CommonSecretsOptions options =
+            configuration.GetSection("CommonSecrets")
+                .Get<CommonSecretsOptions>()!;
+
+        IReadOnlyDictionary<string, SecretProviderDefinition> providers =
+            SecretProviderConfiguration.ReadProviders(configuration);
+
+        InvalidOperationException exception =
+            Assert.Throws<InvalidOperationException>(
+                () => CommonSecretsPolicy.Validate(options, providers));
+
+        Assert.Contains(
+            "not allowed",
+            exception.Message,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ProductionOpenBaoRequiresEnabledHttpsSettings()
+    {
+        IConfiguration configuration = Build(new Dictionary<string, string?>
+        {
+            ["CommonSecrets:Mode"] = "Production",
+            ["CommonSecrets:ProviderOrder:0"] = "PrimarySecrets",
+            ["CommonSecrets:Providers:PrimarySecrets:Type"] = "OpenBao",
+            ["CommonSecrets:Providers:PrimarySecrets:Settings:Enabled"] = "true",
+            ["CommonSecrets:Providers:PrimarySecrets:Settings:RequireHttps"] = "false",
+            ["CommonSecrets:Providers:PrimarySecrets:Settings:Address"] =
+                "http://openbao.example:8200"
+        });
+
+        CommonSecretsOptions options =
+            configuration.GetSection("CommonSecrets")
+                .Get<CommonSecretsOptions>()!;
+
+        IReadOnlyDictionary<string, SecretProviderDefinition> providers =
+            SecretProviderConfiguration.ReadProviders(configuration);
+
+        InvalidOperationException exception =
+            Assert.Throws<InvalidOperationException>(
+                () => CommonSecretsPolicy.Validate(options, providers));
+
+        Assert.Contains(
+            "HTTPS",
+            exception.Message,
+            StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
     public void OfflineDevelopmentRejectsRemoteOpenBao()
     {
-        CommonSecretsOptions options = new()
+        IConfiguration configuration = Build(new Dictionary<string, string?>
         {
-            Mode = SecretsEnvironmentMode.OfflineDevelopment
-        };
-        OpenBaoOptions openBao = new()
-        {
-            Enabled = true,
-            Address = "https://openbao.office.example:8200",
-            RequireHttps = true
-        };
+            ["CommonSecrets:Mode"] = "OfflineDevelopment",
+            ["CommonSecrets:ProviderOrder:0"] = "LocalVault",
+            ["CommonSecrets:Providers:LocalVault:Type"] = "OpenBao",
+            ["CommonSecrets:Providers:LocalVault:Settings:Enabled"] = "true",
+            ["CommonSecrets:Providers:LocalVault:Settings:RequireHttps"] = "false",
+            ["CommonSecrets:Providers:LocalVault:Settings:Address"] =
+                "https://openbao.office.example:8200"
+        });
 
-        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
-            () => CommonSecretsPolicy.Validate(options, openBao));
+        CommonSecretsOptions options =
+            configuration.GetSection("CommonSecrets")
+                .Get<CommonSecretsOptions>()!;
 
-        Assert.Contains("loopback", exception.Message, StringComparison.OrdinalIgnoreCase);
+        IReadOnlyDictionary<string, SecretProviderDefinition> providers =
+            SecretProviderConfiguration.ReadProviders(configuration);
+
+        InvalidOperationException exception =
+            Assert.Throws<InvalidOperationException>(
+                () => CommonSecretsPolicy.Validate(options, providers));
+
+        Assert.Contains(
+            "loopback",
+            exception.Message,
+            StringComparison.OrdinalIgnoreCase);
     }
 
-    [Fact]
-    public void OfflineDevelopmentAllowsLocalOpenBao()
-    {
-        CommonSecretsOptions options = new()
-        {
-            Mode = SecretsEnvironmentMode.OfflineDevelopment
-        };
-        OpenBaoOptions openBao = new()
-        {
-            Enabled = true,
-            Address = "http://127.0.0.1:8200",
-            RequireHttps = false
-        };
-
-        CommonSecretsPolicy.Validate(options, openBao);
-    }
-
-    [Fact]
-    public void ServiceRegistrationFailsClosedForProductionFallbackConfiguration()
-    {
-        Dictionary<string, string?> values = new()
-        {
-            ["CommonSecrets:Mode"] = "Production",
-            ["CommonSecrets:ProviderOrder:0"] = "OpenBao",
-            ["CommonSecrets:ProviderOrder:1"] = "Configuration",
-            ["CommonSecrets:OpenBao:Enabled"] = "true",
-            ["CommonSecrets:OpenBao:RequireHttps"] = "true",
-            ["CommonSecrets:OpenBao:Address"] = "https://openbao.example:8200"
-        };
-        IConfiguration configuration = new ConfigurationBuilder()
+    private static IConfiguration Build(
+        Dictionary<string, string?> values)
+        => new ConfigurationBuilder()
             .AddInMemoryCollection(values)
             .Build();
-        ServiceCollection services = new();
-
-        Assert.Throws<InvalidOperationException>(() => services.AddCommonSecrets(configuration));
-    }
 }

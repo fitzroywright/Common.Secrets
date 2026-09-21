@@ -11,59 +11,124 @@ public static class CommonSecretProviderFactory
         CommonSecretsOptions commonOptions = configuration
             .GetSection("CommonSecrets")
             .Get<CommonSecretsOptions>() ?? new CommonSecretsOptions();
-        OpenBaoOptions openBaoOptions = configuration
-            .GetSection("CommonSecrets:OpenBao")
-            .Get<OpenBaoOptions>() ?? new OpenBaoOptions();
-        BitwardenSecretsManagerOptions bitwardenOptions = configuration
-            .GetSection("CommonSecrets:Bitwarden")
-            .Get<BitwardenSecretsManagerOptions>() ?? new BitwardenSecretsManagerOptions();
-        BitwardenPasswordManagerOptions passwordManagerOptions = configuration
-            .GetSection("CommonSecrets:BitwardenPasswordManager")
-            .Get<BitwardenPasswordManagerOptions>() ?? new BitwardenPasswordManagerOptions();
 
-        CommonSecretsPolicy.Validate(commonOptions, openBaoOptions);
+        return CreateProviderSet(
+            configuration,
+            commonOptions,
+            new NullSecretTelemetrySink()).Provider;
+    }
 
-        ISecretProvider environmentProvider = new EnvironmentSecretProvider();
-        ISecretProvider passwordManagerProvider = new BitwardenPasswordManagerSecretProvider(passwordManagerOptions);
-        ISecretProvider secretsManagerProvider = new BitwardenSecretProvider(bitwardenOptions);
-        HttpClient openBaoHttpClient = new();
-        IOpenBaoAuthenticator authenticator = new OpenBaoAuthenticator(openBaoOptions, commonOptions, openBaoHttpClient);
-        ISecretProvider openBaoProvider = new OpenBaoSecretProvider(openBaoOptions, openBaoHttpClient, authenticator);
-        ISecretProvider configurationProvider = new ConfigurationSecretProvider(configuration);
+    internal static ConfiguredSecretProviderSet CreateProviderSet(
+        IConfiguration configuration,
+        CommonSecretsOptions commonOptions,
+        ISecretTelemetrySink telemetry)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        ArgumentNullException.ThrowIfNull(commonOptions);
+        ArgumentNullException.ThrowIfNull(telemetry);
 
-        Dictionary<string, ISecretProvider> providersByName = new(StringComparer.OrdinalIgnoreCase)
-        {
-            ["Environment"] = environmentProvider,
-            ["BitwardenPasswordManager"] = passwordManagerProvider,
-            ["BitwardenSecretsManager"] = secretsManagerProvider,
-            ["Bitwarden"] = secretsManagerProvider,
-            ["OpenBao"] = openBaoProvider,
-            ["Configuration"] = configurationProvider
-        };
+        IReadOnlyDictionary<string, SecretProviderDefinition> definitions =
+            SecretProviderConfiguration.ReadProviders(configuration);
 
-        string[] providerOrder = CommonSecretsPolicy.ResolveProviderOrder(commonOptions);
+        CommonSecretsPolicy.Validate(commonOptions, definitions);
+
+        string[] providerOrder =
+            CommonSecretsPolicy.ResolveProviderOrder(commonOptions, definitions);
+
         List<ISecretProvider> orderedProviders = [];
-        HashSet<ISecretProvider> includedProviders = new(ReferenceEqualityComparer.Instance);
+        Dictionary<string, ISecretProviderHealth> healthProviders =
+            new(StringComparer.OrdinalIgnoreCase);
 
-        foreach (string configuredName in providerOrder)
+        foreach (string providerName in providerOrder)
         {
-            string providerName = configuredName?.Trim() ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(providerName) ||
-                !providersByName.TryGetValue(providerName, out ISecretProvider? secretProvider))
-            {
-                throw new InvalidOperationException(
-                    $"Unknown Common.Secrets provider '{configuredName}'. Valid providers are Environment, BitwardenPasswordManager, BitwardenSecretsManager, OpenBao and Configuration. 'Bitwarden' remains supported as a legacy alias for BitwardenSecretsManager.");
-            }
+            SecretProviderDefinition definition = definitions[providerName];
+            ISecretProvider concrete = CreateConcreteProvider(
+                definition,
+                configuration,
+                commonOptions);
 
-            if (!includedProviders.Add(secretProvider))
-            {
-                throw new InvalidOperationException(
-                    $"Common.Secrets provider '{providerName}' appears more than once in CommonSecrets:ProviderOrder.");
-            }
+            ISecretProvider named =
+                new NamedSecretProvider(providerName, concrete);
 
-            orderedProviders.Add(secretProvider);
+            ObservedSecretProvider observed =
+                new(named, telemetry, commonOptions);
+
+            orderedProviders.Add(observed);
+            healthProviders.Add(providerName, observed);
         }
 
-        return new ChainedSecretProvider(orderedProviders);
+        return new ConfiguredSecretProviderSet(
+            new ChainedSecretProvider(orderedProviders),
+            providerOrder,
+            healthProviders);
     }
+
+    private static ISecretProvider CreateConcreteProvider(
+        SecretProviderDefinition definition,
+        IConfiguration configuration,
+        CommonSecretsOptions commonOptions)
+    {
+        switch (definition.Type.Trim().ToUpperInvariant())
+        {
+            case "ENVIRONMENT":
+                return new EnvironmentSecretProvider();
+
+            case "CONFIGURATION":
+                return new ConfigurationSecretProvider(configuration);
+
+            case "BITWARDENPASSWORDMANAGER":
+            {
+                BitwardenPasswordManagerOptions options =
+                    definition.Settings.Get<BitwardenPasswordManagerOptions>()
+                    ?? new BitwardenPasswordManagerOptions();
+
+                return new BitwardenPasswordManagerSecretProvider(options);
+            }
+
+            case "BITWARDENSECRETSMANAGER":
+            {
+                BitwardenSecretsManagerOptions options =
+                    definition.Settings.Get<BitwardenSecretsManagerOptions>()
+                    ?? new BitwardenSecretsManagerOptions();
+
+                return new BitwardenSecretProvider(options);
+            }
+
+            case "OPENBAO":
+            {
+                OpenBaoOptions options =
+                    definition.Settings.Get<OpenBaoOptions>()
+                    ?? new OpenBaoOptions();
+
+                HttpClient client = new();
+                IOpenBaoAuthenticator authenticator =
+                    new OpenBaoAuthenticator(options, commonOptions, client);
+
+                return new OpenBaoSecretProvider(options, client, authenticator);
+            }
+
+            default:
+                throw new InvalidOperationException(
+                    $"Common.Secrets provider instance '{definition.Name}' declares unsupported type '{definition.Type}'.");
+        }
+    }
+}
+
+internal sealed class ConfiguredSecretProviderSet
+{
+    public ConfiguredSecretProviderSet(
+        ISecretProvider provider,
+        IReadOnlyList<string> order,
+        IReadOnlyDictionary<string, ISecretProviderHealth> healthProviders)
+    {
+        Provider = provider ?? throw new ArgumentNullException(nameof(provider));
+        Order = order ?? throw new ArgumentNullException(nameof(order));
+        HealthProviders = healthProviders ?? throw new ArgumentNullException(nameof(healthProviders));
+    }
+
+    public ISecretProvider Provider { get; }
+
+    public IReadOnlyList<string> Order { get; }
+
+    public IReadOnlyDictionary<string, ISecretProviderHealth> HealthProviders { get; }
 }

@@ -6,79 +6,112 @@ namespace Common.Secrets.Tests;
 public sealed class CommonSecretProviderFactoryTests
 {
     [Fact]
-    public void DefaultModeIsProduction()
-    {
-        CommonSecretsOptions options = new();
-
-        Assert.Equal(SecretsEnvironmentMode.Production, options.Mode);
-        Assert.Equal(["OpenBao"], CommonSecretsPolicy.ResolveProviderOrder(options));
-    }
-
-    [Fact]
-    public async Task DevelopmentCanUseConfigurationOnly()
+    public async Task DevelopmentCanUseNamedConfigurationProvider()
     {
         IConfiguration configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["CommonSecrets:Mode"] = "Development",
-                ["CommonSecrets:ProviderOrder:0"] = "Configuration",
+                ["CommonSecrets:ProviderOrder:0"] = "LocalConfig",
+                ["CommonSecrets:Providers:LocalConfig:Type"] = "Configuration",
                 ["Demo:Secret"] = "configuration-value"
             })
             .Build();
 
-        ISecretProvider provider = CommonSecretProviderFactory.Create(configuration);
+        ISecretProvider provider =
+            CommonSecretProviderFactory.Create(configuration);
 
-        string? value = await provider.GetAsync("Demo:Secret");
+        string? value =
+            await provider.GetAsync("Demo:Secret");
 
         Assert.Equal("configuration-value", value);
     }
 
     [Fact]
-    public async Task DevelopmentConfiguredOrderControlsPrecedence()
+    public async Task ProviderOrderReferencesInstanceNames()
     {
-        const string environmentVariable = "COMMON_SECRETS_FACTORY_TEST_VALUE";
-        string? original = Environment.GetEnvironmentVariable(environmentVariable);
+        const string environmentVariable =
+            "COMMON_SECRETS_FACTORY_TEST_VALUE";
+
+        string? original =
+            Environment.GetEnvironmentVariable(environmentVariable);
 
         try
         {
-            Environment.SetEnvironmentVariable(environmentVariable, "environment-value");
+            Environment.SetEnvironmentVariable(
+                environmentVariable,
+                "environment-value");
 
             IConfiguration configuration = new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string?>
                 {
                     ["CommonSecrets:Mode"] = "Development",
-                    ["CommonSecrets:ProviderOrder:0"] = "Configuration",
-                    ["CommonSecrets:ProviderOrder:1"] = "Environment",
+                    ["CommonSecrets:ProviderOrder:0"] = "LocalConfig",
+                    ["CommonSecrets:ProviderOrder:1"] = "ProcessEnvironment",
+                    ["CommonSecrets:Providers:LocalConfig:Type"] = "Configuration",
+                    ["CommonSecrets:Providers:ProcessEnvironment:Type"] = "Environment",
                     [environmentVariable] = "configuration-value"
                 })
                 .Build();
 
-            ISecretProvider provider = CommonSecretProviderFactory.Create(configuration);
-            string? value = await provider.GetAsync(environmentVariable);
+            ISecretProvider provider =
+                CommonSecretProviderFactory.Create(configuration);
+
+            string? value =
+                await provider.GetAsync(environmentVariable);
 
             Assert.Equal("configuration-value", value);
         }
         finally
         {
-            Environment.SetEnvironmentVariable(environmentVariable, original);
+            Environment.SetEnvironmentVariable(
+                environmentVariable,
+                original);
         }
     }
 
     [Fact]
-    public void DevelopmentRejectsDuplicateBitwardenAlias()
+    public void LegacyProviderSpecificShapeIsRejected()
     {
         IConfiguration configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["CommonSecrets:Mode"] = "Development",
-                ["CommonSecrets:ProviderOrder:0"] = "Bitwarden",
-                ["CommonSecrets:ProviderOrder:1"] = "BitwardenSecretsManager"
+                ["CommonSecrets:ProviderOrder:0"] = "OpenBao",
+                ["CommonSecrets:OpenBao:Enabled"] = "true",
+                ["CommonSecrets:OpenBao:Address"] = "https://openbao.example:8200"
             })
             .Build();
 
-        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
-            () => CommonSecretProviderFactory.Create(configuration));
+        InvalidOperationException exception =
+            Assert.Throws<InvalidOperationException>(
+                () => CommonSecretProviderFactory.Create(configuration));
 
-        Assert.Contains("appears more than once", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            "CommonSecrets:Providers",
+            exception.Message,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void BitwardenAliasIsNotAcceptedAsAProviderType()
+    {
+        IConfiguration configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["CommonSecrets:Mode"] = "Development",
+                ["CommonSecrets:ProviderOrder:0"] = "Primary",
+                ["CommonSecrets:Providers:Primary:Type"] = "Bitwarden"
+            })
+            .Build();
+
+        InvalidOperationException exception =
+            Assert.Throws<InvalidOperationException>(
+                () => CommonSecretProviderFactory.Create(configuration));
+
+        Assert.Contains(
+            "not allowed",
+            exception.Message,
+            StringComparison.OrdinalIgnoreCase);
     }
 }

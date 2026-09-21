@@ -1,125 +1,145 @@
+using Microsoft.Extensions.Configuration;
+
 namespace Common.Secrets;
 
 public static class CommonSecretsPolicy
 {
-    private static readonly IReadOnlyDictionary<SecretsEnvironmentMode, string[]> DefaultProviderOrder =
-        new Dictionary<SecretsEnvironmentMode, string[]>
-        {
-            [SecretsEnvironmentMode.Production] = ["OpenBao"],
-            [SecretsEnvironmentMode.Development] = ["Environment", "OpenBao", "BitwardenSecretsManager", "Configuration"],
-            [SecretsEnvironmentMode.OfflineDevelopment] = ["OpenBao", "Environment", "Configuration"],
-            [SecretsEnvironmentMode.Test] = ["Environment", "Configuration"]
-        };
-
-    private static readonly IReadOnlyDictionary<SecretsEnvironmentMode, HashSet<string>> AllowedProviders =
+    private static readonly IReadOnlyDictionary<SecretsEnvironmentMode, HashSet<string>> AllowedProviderTypes =
         new Dictionary<SecretsEnvironmentMode, HashSet<string>>
         {
-            [SecretsEnvironmentMode.Production] = new(StringComparer.OrdinalIgnoreCase) { "OpenBao" },
-            [SecretsEnvironmentMode.Development] = new(StringComparer.OrdinalIgnoreCase)
-            {
-                "Environment",
-                "OpenBao",
-                "BitwardenPasswordManager",
-                "BitwardenSecretsManager",
-                "Configuration"
-            },
-            [SecretsEnvironmentMode.OfflineDevelopment] = new(StringComparer.OrdinalIgnoreCase)
-            {
-                "OpenBao",
-                "Environment",
-                "Configuration"
-            },
-            [SecretsEnvironmentMode.Test] = new(StringComparer.OrdinalIgnoreCase)
-            {
-                "Environment",
-                "Configuration"
-            }
+            [SecretsEnvironmentMode.Production] =
+                new(StringComparer.OrdinalIgnoreCase) { "OpenBao" },
+
+            [SecretsEnvironmentMode.Development] =
+                new(StringComparer.OrdinalIgnoreCase)
+                {
+                    "Environment",
+                    "OpenBao",
+                    "BitwardenPasswordManager",
+                    "BitwardenSecretsManager",
+                    "Configuration"
+                },
+
+            [SecretsEnvironmentMode.OfflineDevelopment] =
+                new(StringComparer.OrdinalIgnoreCase)
+                {
+                    "OpenBao",
+                    "Environment",
+                    "Configuration"
+                },
+
+            [SecretsEnvironmentMode.Test] =
+                new(StringComparer.OrdinalIgnoreCase)
+                {
+                    "Environment",
+                    "Configuration"
+                }
         };
 
-    public static string[] ResolveProviderOrder(CommonSecretsOptions options)
+    public static string[] ResolveProviderOrder(
+        CommonSecretsOptions options,
+        IReadOnlyDictionary<string, SecretProviderDefinition> providers)
     {
         ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(providers);
 
-        string[] providers = options.ProviderOrder is { Length: > 0 }
-            ? options.ProviderOrder
-            : DefaultProviderOrder[options.Mode];
+        if (providers.Count == 0)
+        {
+            throw new InvalidOperationException(
+                "Common.Secrets requires at least one provider instance under CommonSecrets:Providers.");
+        }
 
-        ValidateProviderOrder(options.Mode, providers);
-        return providers;
+        string[] order;
+        if (options.ProviderOrder is { Length: > 0 })
+        {
+            order = options.ProviderOrder
+                .Select(x => x?.Trim() ?? string.Empty)
+                .ToArray();
+        }
+        else if (providers.Count == 1)
+        {
+            order = [providers.Keys.Single()];
+        }
+        else
+        {
+            throw new InvalidOperationException(
+                "CommonSecrets:ProviderOrder is required when more than one provider instance is configured.");
+        }
+
+        HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
+        HashSet<string> allowedTypes = AllowedProviderTypes[options.Mode];
+
+        foreach (string providerName in order)
+        {
+            if (string.IsNullOrWhiteSpace(providerName))
+                throw new InvalidOperationException("Common.Secrets provider order cannot contain blank names.");
+
+            if (!providers.TryGetValue(providerName, out SecretProviderDefinition? definition))
+            {
+                throw new InvalidOperationException(
+                    $"Common.Secrets provider order references unknown instance '{providerName}'.");
+            }
+
+            if (!allowedTypes.Contains(definition.Type))
+            {
+                throw new InvalidOperationException(
+                    $"Provider instance '{providerName}' uses type '{definition.Type}', which is not allowed in Common.Secrets mode '{options.Mode}'.");
+            }
+
+            if (!seen.Add(providerName))
+            {
+                throw new InvalidOperationException(
+                    $"Provider instance '{providerName}' appears more than once in CommonSecrets:ProviderOrder.");
+            }
+        }
+
+        return order;
     }
 
     public static void Validate(
         CommonSecretsOptions options,
-        OpenBaoOptions openBaoOptions)
+        IReadOnlyDictionary<string, SecretProviderDefinition> providers)
     {
         ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(openBaoOptions);
+        ArgumentNullException.ThrowIfNull(providers);
 
-        _ = ResolveProviderOrder(options);
+        string[] order = ResolveProviderOrder(options, providers);
 
-        if (options.Mode == SecretsEnvironmentMode.Production)
+        foreach (string providerName in order)
         {
-            if (!openBaoOptions.Enabled)
-            {
-                throw new InvalidOperationException("Common.Secrets production mode requires OpenBao to be enabled.");
-            }
+            SecretProviderDefinition definition = providers[providerName];
 
-            if (!openBaoOptions.RequireHttps)
+            if (string.Equals(definition.Type, "OpenBao", StringComparison.OrdinalIgnoreCase))
             {
-                throw new InvalidOperationException("Common.Secrets production mode requires HTTPS for OpenBao.");
+                OpenBaoOptions openBaoOptions =
+                    definition.Settings.Get<OpenBaoOptions>() ?? new OpenBaoOptions();
+
+                if (options.Mode == SecretsEnvironmentMode.Production)
+                {
+                    if (!openBaoOptions.Enabled)
+                    {
+                        throw new InvalidOperationException(
+                            $"Production provider instance '{providerName}' must enable OpenBao.");
+                    }
+
+                    if (!openBaoOptions.RequireHttps)
+                    {
+                        throw new InvalidOperationException(
+                            $"Production provider instance '{providerName}' must require HTTPS.");
+                    }
+                }
+
+                if (options.Mode == SecretsEnvironmentMode.OfflineDevelopment &&
+                    openBaoOptions.Enabled)
+                {
+                    if (!Uri.TryCreate(openBaoOptions.Address, UriKind.Absolute, out Uri? uri) ||
+                        !uri.IsLoopback)
+                    {
+                        throw new InvalidOperationException(
+                            $"OfflineDevelopment provider instance '{providerName}' requires a loopback/local-only OpenBao address.");
+                    }
+                }
             }
         }
-
-        if (options.Mode == SecretsEnvironmentMode.OfflineDevelopment && openBaoOptions.Enabled)
-        {
-            if (!Uri.TryCreate(openBaoOptions.Address, UriKind.Absolute, out Uri? uri) || !uri.IsLoopback)
-            {
-                throw new InvalidOperationException(
-                    "Common.Secrets OfflineDevelopment mode requires the OpenBao address to be loopback/local-only.");
-            }
-        }
-    }
-
-    private static void ValidateProviderOrder(
-        SecretsEnvironmentMode mode,
-        IEnumerable<string> providerOrder)
-    {
-        HashSet<string> allowed = AllowedProviders[mode];
-        HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
-
-        foreach (string providerName in providerOrder)
-        {
-            if (string.IsNullOrWhiteSpace(providerName))
-            {
-                throw new InvalidOperationException("Common.Secrets provider names cannot be blank.");
-            }
-
-            string configuredName = providerName.Trim();
-            string normalized = NormalizeProviderName(configuredName);
-
-            if (!allowed.Contains(normalized))
-            {
-                throw new InvalidOperationException(
-                    $"Provider '{configuredName}' is not allowed in Common.Secrets mode '{mode}'.");
-            }
-
-            if (!seen.Add(normalized))
-            {
-                throw new InvalidOperationException(
-                    $"Provider '{configuredName}' appears more than once in Common.Secrets provider order.");
-            }
-        }
-
-        if (mode == SecretsEnvironmentMode.Production && !seen.Contains("OpenBao"))
-        {
-            throw new InvalidOperationException("Common.Secrets production mode must use OpenBao and fails closed without it.");
-        }
-    }
-
-    private static string NormalizeProviderName(string providerName)
-    {
-        return string.Equals(providerName, "Bitwarden", StringComparison.OrdinalIgnoreCase)
-            ? "BitwardenSecretsManager"
-            : providerName;
     }
 }
