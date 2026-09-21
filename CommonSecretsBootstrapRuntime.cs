@@ -20,19 +20,10 @@ public sealed class CommonSecretsBootstrapRuntime : IAsyncDisposable
         Provider = bootstrapServices.GetRequiredService<ISecretProvider>();
         HealthCheck = bootstrapServices.GetRequiredService<ICommonSecretsHealthCheck>();
         CommonOptions = bootstrapServices.GetRequiredService<CommonSecretsOptions>();
-        OpenBaoOptions = bootstrapServices.GetRequiredService<OpenBaoOptions>();
-        BitwardenPasswordManagerOptions = bootstrapServices.GetRequiredService<BitwardenPasswordManagerOptions>();
-        BitwardenSecretsManagerOptions = bootstrapServices.GetRequiredService<BitwardenSecretsManagerOptions>();
         ProviderHealth = bootstrapServices.GetServices<ISecretProviderHealth>().ToArray();
     }
 
     public CommonSecretsOptions CommonOptions { get; }
-
-    public OpenBaoOptions OpenBaoOptions { get; }
-
-    public BitwardenPasswordManagerOptions BitwardenPasswordManagerOptions { get; }
-
-    public BitwardenSecretsManagerOptions BitwardenSecretsManagerOptions { get; }
 
     public ISecretProvider Provider { get; }
 
@@ -54,10 +45,10 @@ public sealed class CommonSecretsBootstrapRuntime : IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(services);
 
+        // Register the already-built provider-neutral graph. Provider-specific
+        // option objects belong to named provider instances and are intentionally
+        // not exported as global application services.
         services.AddSingleton(CommonOptions);
-        services.AddSingleton(OpenBaoOptions);
-        services.AddSingleton(BitwardenPasswordManagerOptions);
-        services.AddSingleton(BitwardenSecretsManagerOptions);
         services.AddSingleton(Provider);
         services.AddSingleton<ISecretProvider>(_ => Provider);
         services.AddSingleton<ICommonSecretsHealthCheck>(_ => HealthCheck);
