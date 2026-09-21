@@ -13,8 +13,8 @@ public sealed class CommonSecretsBootstrapRuntimeTests
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["CommonSecrets:Mode"] = "Development",
-                ["CommonSecrets:ProviderOrder:0"] = "Configuration",
-                ["CommonSecrets:OpenBao:Enabled"] = "false",
+                ["CommonSecrets:ProviderOrder:0"] = "LocalConfiguration",
+                ["CommonSecrets:Providers:LocalConfiguration:Type"] = "Configuration",
                 ["Example:Secret"] = "configuration-value"
             })
             .Build();
@@ -31,8 +31,8 @@ public sealed class CommonSecretsBootstrapRuntimeTests
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["CommonSecrets:Mode"] = "Development",
-                ["CommonSecrets:ProviderOrder:0"] = "Configuration",
-                ["CommonSecrets:OpenBao:Enabled"] = "false",
+                ["CommonSecrets:ProviderOrder:0"] = "LocalConfiguration",
+                ["CommonSecrets:Providers:LocalConfiguration:Type"] = "Configuration",
                 ["Example:Secret"] = "shared-value"
             })
             .Build();
