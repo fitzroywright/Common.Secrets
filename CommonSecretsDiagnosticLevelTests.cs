@@ -2,11 +2,11 @@ using Common.Diagnostics;
 
 namespace Common.Secrets;
 
-public sealed class CommonSecretsProviderRegistrationLevelXTest : ILevelXLocalTest
+public sealed class CommonSecretsProviderRegistrationDiagnosticLevelTest : IDiagnosticLevelLocalTest
 {
     private readonly IReadOnlyList<ISecretProviderHealth> providers;
 
-    public CommonSecretsProviderRegistrationLevelXTest(IEnumerable<ISecretProviderHealth> providers)
+    public CommonSecretsProviderRegistrationDiagnosticLevelTest(IEnumerable<ISecretProviderHealth> providers)
         => this.providers = (providers ?? throw new ArgumentNullException(nameof(providers))).ToArray();
 
     public string TestId => "COMMON.SECRETS.L5.PROVIDERS.REGISTERED";
@@ -28,11 +28,11 @@ public sealed class CommonSecretsProviderRegistrationLevelXTest : ILevelXLocalTe
     }
 }
 
-public sealed class CommonSecretsEnabledProviderLevelXTest : ILevelXLocalTest
+public sealed class CommonSecretsEnabledProviderDiagnosticLevelTest : IDiagnosticLevelLocalTest
 {
     private readonly IReadOnlyList<ISecretProviderHealth> providers;
 
-    public CommonSecretsEnabledProviderLevelXTest(IEnumerable<ISecretProviderHealth> providers)
+    public CommonSecretsEnabledProviderDiagnosticLevelTest(IEnumerable<ISecretProviderHealth> providers)
         => this.providers = (providers ?? throw new ArgumentNullException(nameof(providers))).ToArray();
 
     public string TestId => "COMMON.SECRETS.L5.PROVIDERS.ENABLED";
@@ -50,11 +50,11 @@ public sealed class CommonSecretsEnabledProviderLevelXTest : ILevelXLocalTest
     }
 }
 
-public sealed class CommonSecretsProviderAvailabilityLevelXTest : ILevelXLocalTest
+public sealed class CommonSecretsProviderAvailabilityDiagnosticLevelTest : IDiagnosticLevelLocalTest
 {
     private readonly IReadOnlyList<ISecretProviderHealth> providers;
 
-    public CommonSecretsProviderAvailabilityLevelXTest(IEnumerable<ISecretProviderHealth> providers)
+    public CommonSecretsProviderAvailabilityDiagnosticLevelTest(IEnumerable<ISecretProviderHealth> providers)
         => this.providers = (providers ?? throw new ArgumentNullException(nameof(providers))).ToArray();
 
     public string TestId => "COMMON.SECRETS.L4.PROVIDERS.AVAILABLE";
@@ -93,11 +93,11 @@ public sealed class CommonSecretsProviderAvailabilityLevelXTest : ILevelXLocalTe
     }
 }
 
-public sealed class CommonSecretsIdentityCompletenessLevelXTest : ILevelXLocalTest
+public sealed class CommonSecretsIdentityCompletenessDiagnosticLevelTest : IDiagnosticLevelLocalTest
 {
     private readonly CommonSecretsOptions options;
 
-    public CommonSecretsIdentityCompletenessLevelXTest(CommonSecretsOptions options)
+    public CommonSecretsIdentityCompletenessDiagnosticLevelTest(CommonSecretsOptions options)
         => this.options = options ?? throw new ArgumentNullException(nameof(options));
 
     public string TestId => "COMMON.SECRETS.L4.IDENTITY.COMPLETE";

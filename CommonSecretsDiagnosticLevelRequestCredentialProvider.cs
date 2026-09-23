@@ -3,9 +3,9 @@ using Microsoft.Extensions.Configuration;
 
 namespace Common.Secrets;
 
-public sealed class CommonSecretsLevelXRequestCredentialProvider(
+public sealed class CommonSecretsDiagnosticLevelRequestCredentialProvider(
     ISecretProvider secrets,
-    IConfiguration configuration) : ILevelXRequestCredentialProvider
+    IConfiguration configuration) : IDiagnosticLevelRequestCredentialProvider
 {
     public async ValueTask<string?> GetCredentialAsync(
         CancellationToken cancellationToken = default)
