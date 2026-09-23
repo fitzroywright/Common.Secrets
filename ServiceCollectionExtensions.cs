@@ -61,6 +61,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ILevelXLocalTest, CommonSecretsEnabledProviderLevelXTest>();
         services.AddSingleton<ILevelXLocalTest, CommonSecretsProviderAvailabilityLevelXTest>();
         services.AddSingleton<ILevelXLocalTest, CommonSecretsIdentityCompletenessLevelXTest>();
+        services.Replace(ServiceDescriptor.Singleton<ILevelXRequestCredentialProvider, CommonSecretsLevelXRequestCredentialProvider>());
         return services;
     }
 }
