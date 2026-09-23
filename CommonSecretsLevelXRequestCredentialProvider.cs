@@ -8,7 +8,6 @@ public sealed class CommonSecretsLevelXRequestCredentialProvider(
     IConfiguration configuration) : ILevelXRequestCredentialProvider
 {
     public async ValueTask<string?> GetCredentialAsync(
-        Microsoft.AspNetCore.Http.HttpContext context,
         CancellationToken cancellationToken = default)
     {
         string? secretName = configuration["Aegis:Diagnostics:RequestCredentialSecretName"]?.Trim();
