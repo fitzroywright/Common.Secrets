@@ -57,11 +57,11 @@ public static class ServiceCollectionExtensions
         services.AddCommonDiagnostics();
         services.Replace(ServiceDescriptor.Singleton<ISecretTelemetrySink, CommonDiagnosticsSecretTelemetrySink>());
         services.AddScoped<IDiagnosticCheck, CommonSecretsDiagnosticCheck>();
-        services.AddSingleton<ILevelXLocalTest, CommonSecretsProviderRegistrationLevelXTest>();
-        services.AddSingleton<ILevelXLocalTest, CommonSecretsEnabledProviderLevelXTest>();
-        services.AddSingleton<ILevelXLocalTest, CommonSecretsProviderAvailabilityLevelXTest>();
-        services.AddSingleton<ILevelXLocalTest, CommonSecretsIdentityCompletenessLevelXTest>();
-        services.Replace(ServiceDescriptor.Singleton<ILevelXRequestCredentialProvider, CommonSecretsLevelXRequestCredentialProvider>());
+        services.AddSingleton<IDiagnosticLevelLocalTest, CommonSecretsProviderRegistrationDiagnosticLevelTest>();
+        services.AddSingleton<IDiagnosticLevelLocalTest, CommonSecretsEnabledProviderDiagnosticLevelTest>();
+        services.AddSingleton<IDiagnosticLevelLocalTest, CommonSecretsProviderAvailabilityDiagnosticLevelTest>();
+        services.AddSingleton<IDiagnosticLevelLocalTest, CommonSecretsIdentityCompletenessDiagnosticLevelTest>();
+        services.Replace(ServiceDescriptor.Singleton<IDiagnosticLevelRequestCredentialProvider, CommonSecretsDiagnosticLevelRequestCredentialProvider>());
         return services;
     }
 }
