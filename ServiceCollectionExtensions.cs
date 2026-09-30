@@ -47,6 +47,7 @@ public static class ServiceCollectionExtensions
         }
 
         services.AddSingleton<ICommonSecretsHealthCheck, CommonSecretsHealthCheck>();
+        services.AddSingleton<IDependencyDiagnosticProbe, CommonSecretsDependencyProbe>();
 
         return services;
     }
