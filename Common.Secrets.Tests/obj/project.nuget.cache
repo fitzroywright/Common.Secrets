@@ -1,0 +1,32 @@
+{
+  "version": 2,
+  "dgSpecHash": "y+aavpC444Y=",
+  "success": true,
+  "projectFilePath": "D:\\Projects\\Common\\Common.Secrets\\Common.Secrets.Tests\\Common.Secrets.Tests.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\FWright.FFTPJ\\.nuget\\packages\\microsoft.codecoverage\\18.12.0\\microsoft.codecoverage.18.12.0.nupkg.sha512",
+    "C:\\Users\\FWright.FFTPJ\\.nuget\\packages\\microsoft.data.sqlite\\11.0.0\\microsoft.data.sqlite.11.0.0.nupkg.sha512",
+    "C:\\Users\\FWright.FFTPJ\\.nuget\\packages\\microsoft.data.sqlite.core\\11.0.0\\microsoft.data.sqlite.core.11.0.0.nupkg.sha512",
+    "C:\\Users\\FWright.FFTPJ\\.nuget\\packages\\microsoft.extensions.configuration\\11.0.0\\microsoft.extensions.configuration.11.0.0.nupkg.sha512",
+    "C:\\Users\\FWright.FFTPJ\\.nuget\\packages\\microsoft.extensions.configuration.binder\\11.0.0\\microsoft.extensions.configuration.binder.11.0.0.nupkg.sha512",
+    "C:\\Users\\FWright.FFTPJ\\.nuget\\packages\\microsoft.extensions.dependencyinjection\\11.0.0\\microsoft.extensions.dependencyinjection.11.0.0.nupkg.sha512",
+    "C:\\Users\\FWright.FFTPJ\\.nuget\\packages\\microsoft.net.test.sdk\\18.12.0\\microsoft.net.test.sdk.18.12.0.nupkg.sha512",
+    "C:\\Users\\FWright.FFTPJ\\.nuget\\packages\\microsoft.testplatform.objectmodel\\18.12.0\\microsoft.testplatform.objectmodel.18.12.0.nupkg.sha512",
+    "C:\\Users\\FWright.FFTPJ\\.nuget\\packages\\microsoft.testplatform.testhost\\18.12.0\\microsoft.testplatform.testhost.18.12.0.nupkg.sha512",
+    "C:\\Users\\FWright.FFTPJ\\.nuget\\packages\\sqlite\\3.53.4\\sqlite.3.53.4.nupkg.sha512",
+    "C:\\Users\\FWright.FFTPJ\\.nuget\\packages\\sqlitepclraw.bundle_e_sqlite3\\3.0.5\\sqlitepclraw.bundle_e_sqlite3.3.0.5.nupkg.sha512",
+    "C:\\Users\\FWright.FFTPJ\\.nuget\\packages\\sqlitepclraw.config.e_sqlite3\\3.0.5\\sqlitepclraw.config.e_sqlite3.3.0.5.nupkg.sha512",
+    "C:\\Users\\FWright.FFTPJ\\.nuget\\packages\\sqlitepclraw.core\\3.0.5\\sqlitepclraw.core.3.0.5.nupkg.sha512",
+    "C:\\Users\\FWright.FFTPJ\\.nuget\\packages\\sqlitepclraw.lib.e_sqlite3\\3.53.3\\sqlitepclraw.lib.e_sqlite3.3.53.3.nupkg.sha512",
+    "C:\\Users\\FWright.FFTPJ\\.nuget\\packages\\sqlitepclraw.provider.e_sqlite3\\3.0.5\\sqlitepclraw.provider.e_sqlite3.3.0.5.nupkg.sha512",
+    "C:\\Users\\FWright.FFTPJ\\.nuget\\packages\\xunit\\2.9.3\\xunit.2.9.3.nupkg.sha512",
+    "C:\\Users\\FWright.FFTPJ\\.nuget\\packages\\xunit.abstractions\\2.0.3\\xunit.abstractions.2.0.3.nupkg.sha512",
+    "C:\\Users\\FWright.FFTPJ\\.nuget\\packages\\xunit.analyzers\\1.18.0\\xunit.analyzers.1.18.0.nupkg.sha512",
+    "C:\\Users\\FWright.FFTPJ\\.nuget\\packages\\xunit.assert\\2.9.3\\xunit.assert.2.9.3.nupkg.sha512",
+    "C:\\Users\\FWright.FFTPJ\\.nuget\\packages\\xunit.core\\2.9.3\\xunit.core.2.9.3.nupkg.sha512",
+    "C:\\Users\\FWright.FFTPJ\\.nuget\\packages\\xunit.extensibility.core\\2.9.3\\xunit.extensibility.core.2.9.3.nupkg.sha512",
+    "C:\\Users\\FWright.FFTPJ\\.nuget\\packages\\xunit.extensibility.execution\\2.9.3\\xunit.extensibility.execution.2.9.3.nupkg.sha512",
+    "C:\\Users\\FWright.FFTPJ\\.nuget\\packages\\xunit.runner.visualstudio\\4.0.1\\xunit.runner.visualstudio.4.0.1.nupkg.sha512"
+  ],
+  "logs": []
+}
