@@ -15,7 +15,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyDescriptionAttribute(("Reusable secret-provider abstractions with configurable per-application provider " +
     "ordering, including Bitwarden and OpenBao."))]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.2.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.2.0+0e081a55d5885a148decb0c86c1baad263448948")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.2.0+3fa596901aaee47938325b899023b0dcf8f11182")]
 [assembly: System.Reflection.AssemblyProductAttribute("Common.Secrets")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Common.Secrets")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.2.0.0")]
